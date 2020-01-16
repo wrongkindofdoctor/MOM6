@@ -410,8 +410,6 @@ subroutine edge_values_implicit_h4( N, h, u, edge_val, h_neglect, answers_2018 )
   real                  :: dx, xavg             ! Differences and averages of successive values of x [H]
   real, dimension(4,4)  :: Asys                 ! boundary conditions
   real, dimension(4)    :: Bsys, Csys
-  real, dimension(4,4)  :: Asys_orig            ! boundary conditions
-  real, dimension(4)    :: Bsys_orig
   real, dimension(N+1)  :: tri_l, &     ! tridiagonal system (lower diagonal) [nondim]
                            tri_d, &     ! tridiagonal system (middle diagonal) [nondim]
                            tri_c, &     ! tridiagonal system central value, with tri_d = tri_c+tri_l+tri_u
