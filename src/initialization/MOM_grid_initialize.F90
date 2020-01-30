@@ -408,7 +408,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! read y into the tmpGlbl buffer
   call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, &
-                     corner=start(1:2), grid_type="t")
+                     grid_type="t")
 
   do j=G%jsg,G%jeg
     G%gridLatT(j) = tmpGlbl(1,2*(j-G%jsg)+2)
@@ -416,7 +416,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
  ! read y into the tmpGlbl buffer
   call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, &
-                     corner=start(1:2), grid_type="b")
+                     grid_type="b")
 
   do J=G%jsg-1,G%jeg
     G%gridLatB(J) = tmpGlbl(1,2*(j-G%jsg)+3)
