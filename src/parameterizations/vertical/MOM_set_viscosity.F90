@@ -1773,7 +1773,7 @@ subroutine set_visc_register_restarts(HI, GV, param_file, visc, restart_CS)
   if (use_kappa_shear .and. KS_at_vertex) then
     call safe_alloc_ptr(visc%TKE_turb, HI%IsdB, HI%IedB, HI%JsdB, HI%JedB, nz+1)
     call safe_alloc_ptr(visc%Kv_shear_Bu, HI%IsdB, HI%IedB, HI%JsdB, HI%JedB, nz+1)
-    call register_restart_field(visc%Kv_shear_Bu, "Kv_shear_Bu", .false., restart_CS,   &
+    call register_restart_field(visc%Kv_shear_Bu, "Kv_shear_Bu", .false., restart_CS, &
                   longname="Shear-driven turbulent viscosity at vertex interfaces", units="m2 s-1", &
                   hor_grid="Bu", z_grid='i')
   elseif (use_kappa_shear) then
@@ -1794,7 +1794,7 @@ subroutine set_visc_register_restarts(HI, GV, param_file, visc, restart_CS)
 
   if (MLE_use_PBL_MLD) then
     call safe_alloc_ptr(visc%MLD, isd, ied, jsd, jed)
-    call register_restart_field(visc%MLD, "MLD", .false., restart_CS,  &
+    call register_restart_field(visc%MLD, "MLD", .false., restart_CS, &
                   longname="Instantaneous active mixing layer depth", units="m")
   endif
 
@@ -2073,7 +2073,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
       allocate(CS%tideamp(isd:ied,jsd:jed)) ; CS%tideamp(:,:) = 0.0
       filename = trim(CS%inputdir) // trim(tideamp_file)
       call log_param(param_file, mdl, "INPUTDIR/TIDEAMP_FILE", filename)
-      call MOM_read_data(filename, 'tideamp', CS%tideamp, G%domain, time_level=1, scale=US%m_to_Z*US%T_to_s)
+      call MOM_read_data(filename, 'tideamp', CS%tideamp, G%domain, timelevel=1, scale=US%m_to_Z*US%T_to_s)
       call pass_var(CS%tideamp,G%domain)
     endif
   endif
