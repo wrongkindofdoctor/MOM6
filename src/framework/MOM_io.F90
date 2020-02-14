@@ -3322,9 +3322,8 @@ subroutine read_axis_data(filename, axis_name, var)
                    " not found in file "//trim(filename))
 
   ndims = get_variable_num_dimensions(fileObj, trim(axis_name))
-  if (size(var) .ne. ndims) &
-    call MOM_error(FATAL, "MOM_io::read_axis_data: The number of dimensions of variable "//trim(axis_name)// &
-    " does not match the size of the var argument passed to the routine")
+  if (ndims .ne. 1) &
+    call MOM_error(FATAL, "MOM_io::read_axis_data: Variable "//trim(axis_name)// " must be a 1-D array.")
   call read_data(fileObj, trim(axis_name), var)
 
   if (check_if_open(fileobj)) call fms2_close_file(fileobj)
