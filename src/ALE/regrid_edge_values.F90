@@ -1232,8 +1232,6 @@ subroutine edge_values_implicit_h6( N, h, u, edge_val, h_neglect, answers_2018 )
   Bsys(1:6) = (/ -1.0, 2.0*h1, -3.0*h1_2, 4.0*h1_3, -5.0*h1_4, 6.0*h1_5 /)
 
   call linear_solver( 6, Asys, Bsys, Csys )
-
-  alpha = Csys(1)
   beta  = Csys(2)
 
   tri_l(2) = alpha
