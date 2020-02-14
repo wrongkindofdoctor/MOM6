@@ -1331,7 +1331,6 @@ subroutine edge_values_implicit_h6( N, h, u, edge_val, h_neglect, answers_2018 )
 end subroutine edge_values_implicit_h6
 
 
-<<<<<<< HEAD
 !> Solve the tridiagonal system AX = R
 !!
 !! This routine uses a variant of Thomas's algorithm to solve the tridiagonal system AX = R, in
