@@ -1076,7 +1076,7 @@ end subroutine add_shelf_flux
 
 
 !> Initializes shelf model data, parameters and diagnostics
-subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS,  diag, forces, fluxes, Time_in, solo_ice_sheet_in)
+subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces, fluxes, Time_in, solo_ice_sheet_in)
   type(param_file_type),        intent(in)    :: param_file !< A structure to parse for run-time parameters
   type(ocean_grid_type),        pointer       :: ocn_grid   !< The calling ocean model's horizontal grid structure
   type(time_type),              intent(inout) :: Time !< The clock that that will indicate the model time
@@ -1105,10 +1105,8 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS,  diag, forces, f
   character(len=200) :: config
   character(len=200) :: IC_file,filename,inputdir
   character(len=40)  :: mdl = "MOM_ice_shelf"  ! This module's name.
-  character(len=40), allocatable :: dim_names
   integer :: i, j, is, ie, js, je, isd, ied, jsd, jed, Isdq, Iedq, Jsdq, Jedq
   integer :: wd_halos(2)
-  integer, allocatable, dimension(:) :: dim_sizes, ndims, start
   logical :: read_TideAmp, shelf_mass_is_dynamic, debug
   character(len=240) :: Tideamp_file
   real    :: utide
@@ -1412,7 +1410,7 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS,  diag, forces, f
   call destroy_dyn_horgrid(dG)
 
   ! Set up the restarts.
-  call restart_init(param_file, CS%restart_CSp,  "Shelf.res")
+  call restart_init(param_file, CS%restart_CSp, "Shelf.res")
   call register_restart_field(ISS%mass_shelf, "shelf_mass", .true., CS%restart_CSp, &
                               longname="Ice shelf mass", units="kg m-2")
   call register_restart_field(ISS%area_shelf_h, "shelf_area", .true., CS%restart_CSp, &

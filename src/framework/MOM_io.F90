@@ -70,7 +70,7 @@ use netcdf
 
 implicit none ; private
 
-public :: close_file, open_file, fieldtype, flush_file
+public :: close_file, open_file, fieldtype, flush_file, write_version_number
 public :: num_timelevels, MOM_read_vector, ensembler, create_file
 public :: slasher, MOM_io_init, field_exists, field_size, read_axis_data
 public :: open_namelist_file, check_nml_error, io_infra_init

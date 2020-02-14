@@ -206,7 +206,6 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   call get_param(param_file,  mdl, "INPUTDIR", inputdir, default=".")
   inputdir = slasher(inputdir)
   filename = trim(adjustl(inputdir)) // trim(adjustl(grid_file))
-
   call log_param(param_file, mdl, "INPUTDIR/GRID_FILE", filename)
   if (.not.file_exists(filename)) &
     call MOM_error(FATAL," set_grid_metrics_from_mosaic: Unable to open "//&
