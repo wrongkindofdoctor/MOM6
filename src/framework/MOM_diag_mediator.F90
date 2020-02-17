@@ -361,14 +361,14 @@ subroutine set_axes_info(G, GV, US, param_file, diag_cs, set_vertical)
   ! Horizontal axes for the native grids
   if (G%symmetric) then
     id_xq = diag_axis_init('xq', G%gridLonB(G%isgB:G%iegB), G%x_axis_units, 'x', &
-              'q point nominal longitude', Domain2=G%Domain%mpp_domain, pos=EAST_FACE)
+              'q point nominal longitude', Domain2=G%Domain%mpp_domain, domain_position=EAST_FACE)
     id_yq = diag_axis_init('yq', G%gridLatB(G%jsgB:G%jegB), G%y_axis_units, 'y', &
-              'q point nominal latitude', Domain2=G%Domain%mpp_domain, pos=NORTH_FACE)
+              'q point nominal latitude', Domain2=G%Domain%mpp_domain, domain_position=NORTH_FACE)
   else
     id_xq = diag_axis_init('xq', G%gridLonB(G%isg:G%ieg), G%x_axis_units, 'x', &
-              'q point nominal longitude', Domain2=G%Domain%mpp_domain, pos=EAST_FACE)
+              'q point nominal longitude', Domain2=G%Domain%mpp_domain, domain_position=EAST_FACE)
     id_yq = diag_axis_init('yq', G%gridLatB(G%jsg:G%jeg), G%y_axis_units, 'y', &
-              'q point nominal latitude', Domain2=G%Domain%mpp_domain, pos=NORTH_FACE)
+              'q point nominal latitude', Domain2=G%Domain%mpp_domain, domain_position=NORTH_FACE)
   endif
   id_xh = diag_axis_init('xh', G%gridLonT(G%isg:G%ieg), G%x_axis_units, 'x', &
               'h point nominal longitude', Domain2=G%Domain%mpp_domain)

@@ -1284,7 +1284,10 @@ subroutine ALE_writeCoordinateFile( CS, GV, directory )
                     'Layer Center Coordinate Separation','1','i','1')
 
   call create_file(trim(filepath), vars, 2, GV=GV)
-  call write_field(trim(filepath), vars(1)%name, ds, "append", var_desc=vars(1), GV=GV)
+  ! NOTE: the argument leave_file_open =.true. ensures that energypath_nc file is not closed until after the final
+  ! variable is written. Too many consecutive calls to write_field that open the file each time may cause
+  ! MPI communication conflicts from repeated MPI_broadcast calls.
+  call write_field(trim(filepath), vars(1)%name, ds, "append", var_desc=vars(1), GV=GV, leave_file_open=.true.)
   call write_field(trim(filepath), vars(2)%name, dsi, "append", var_desc=vars(2), GV=GV)
 
 end subroutine ALE_writeCoordinateFile

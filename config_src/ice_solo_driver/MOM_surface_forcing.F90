@@ -696,7 +696,8 @@ subroutine buoyancy_forcing_from_files(sfc_state, fluxes, day, dt, G, CS)
     enddo ; enddo
 
     call MOM_read_data(trim(CS%inputdir)//trim(CS%freshdischarge_file), "disch_w", &
-             temp(:,:), G%Domain, timelevel=time_lev_monthly, scale=US%kg_m3_to_R*US%m_to_Z*US%T_to_s)
+             temp(:,:), G%Domain, timelevel=time_lev_monthly, scale=US%kg_m3_to_R*US%m_to_Z*US%T_to_s, &
+             leave_file_open=.true.)
     do j=js,je ; do i=is,ie
       fluxes%lrunoff(i,j) = temp(i,j)*US%m_to_L**2*G%IareaT(i,j)
     enddo ; enddo

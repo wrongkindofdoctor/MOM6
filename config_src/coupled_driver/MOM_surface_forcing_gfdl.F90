@@ -1453,7 +1453,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS)
 
   if (CS%read_TIDEAMP) then
     TideAmp_file = trim(CS%inputdir) // trim(TideAmp_file)
-    call MOM_read_data(TideAmp_file,'tideamp',CS%TKE_tidal,G%domain,timelevel=1, scale=US%m_to_Z*US%T_to_s)
+    call MOM_read_data(TideAmp_file,'tideamp',CS%TKE_tidal,G%domain, scale=US%m_to_Z*US%T_to_s)
     do j=jsd, jed; do i=isd, ied
       utide = CS%TKE_tidal(i,j)
       CS%TKE_tidal(i,j) = G%mask2dT(i,j)*CS%Rho0*CS%cd_tides*(utide*utide*utide)
@@ -1483,7 +1483,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS)
 
     call safe_alloc_ptr(CS%gust,isd,ied,jsd,jed)
     gust_file = trim(CS%inputdir) // trim(gust_file)
-    call MOM_read_data(gust_file, 'gustiness', CS%gust, G%domain, timelevel=1, &
+    call MOM_read_data(gust_file, 'gustiness', CS%gust, G%domain, &
                scale=US%kg_m3_to_R*US%m_s_to_L_T**2*US%L_to_Z) ! units in file should be Pa
   endif
   call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &

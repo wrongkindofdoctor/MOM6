@@ -455,7 +455,7 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, diag, CS)
                  "tidal amplitudes with INT_TIDE_DISSIPATION.", default="tideamp.nc")
       filename = trim(CS%inputdir) // trim(tideamp_file)
       call log_param(param_file, mdl, "INPUTDIR/TIDEAMP_FILE", filename)
-      call MOM_read_data(filename, 'tideamp', CS%tideamp, G%domain, timelevel=1, scale=US%m_to_Z*US%T_to_s)
+      call MOM_read_data(filename, 'tideamp', CS%tideamp, G%domain, scale=US%m_to_Z*US%T_to_s)
     endif
 
     call get_param(param_file, mdl, "H2_FILE", h2_file, &
@@ -464,7 +464,7 @@ logical function tidal_mixing_init(Time, G, GV, US, param_file, diag, CS)
                  fail_if_missing=(.not.CS%use_CVMix_tidal))
     filename = trim(CS%inputdir) // trim(h2_file)
     call log_param(param_file, mdl, "INPUTDIR/H2_FILE", filename)
-    call MOM_read_data(filename, 'h2', CS%h2, G%domain, timelevel=1, scale=US%m_to_Z**2)
+    call MOM_read_data(filename, 'h2', CS%h2, G%domain, scale=US%m_to_Z**2)
 
     call get_param(param_file, mdl, "FRACTIONAL_ROUGHNESS_MAX", max_frac_rough, &
                  "The maximum topographic roughness amplitude as a fraction of the mean depth, "//&
@@ -1607,12 +1607,12 @@ subroutine read_tidal_constituents(G, US, tidal_energy_file, CS)
   if (.not. allocated(CS%h_src))          allocate(CS%h_src(nz_in(1)))
 
   ! read in tidal constituents
-  call MOM_read_data(tidal_energy_file, 'M2', tc_m2, G%domain)
-  call MOM_read_data(tidal_energy_file, 'S2', tc_s2, G%domain)
-  call MOM_read_data(tidal_energy_file, 'K1', tc_k1, G%domain)
-  call MOM_read_data(tidal_energy_file, 'O1', tc_o1, G%domain)
+  call MOM_read_data(tidal_energy_file, 'M2', tc_m2, G%domain, leave_file_open=.true.)
+  call MOM_read_data(tidal_energy_file, 'S2', tc_s2, G%domain, leave_file_open=.true.)
+  call MOM_read_data(tidal_energy_file, 'K1', tc_k1, G%domain, leave_file_open=.true.)
+  call MOM_read_data(tidal_energy_file, 'O1', tc_o1, G%domain, leave_file_open=.true.)
   ! Note the hard-coded assumption that z_t and z_w in the file are in centimeters.
-  call MOM_read_data(tidal_energy_file, 'z_t', z_t, scale=100.0*US%m_to_Z)
+  call MOM_read_data(tidal_energy_file, 'z_t', z_t, scale=100.0*US%m_to_Z, leave_file_open=.true.)
   call MOM_read_data(tidal_energy_file, 'z_w', z_w, scale=100.0*US%m_to_Z)
 
   do j=js,je ; do i=is,ie

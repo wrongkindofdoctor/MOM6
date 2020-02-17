@@ -282,7 +282,7 @@ subroutine set_coord_from_TS_profile(Rlay, g_prime, GV, US, param_file, &
   filename = trim(slasher(inputdir))//trim(coord_file)
   call log_param(param_file, mdl, "INPUTDIR/COORD_FILE", filename)
 
-  call MOM_read_data(filename,"PTEMP",T0(:))
+  call MOM_read_data(filename,"PTEMP",T0(:), leave_file_open=.true.)
   call MOM_read_data(filename,"SALT",S0(:))
 
   if (.not.file_exists(filename)) call MOM_error(FATAL, &
@@ -525,9 +525,9 @@ subroutine write_vertgrid_file(GV, US, param_file, directory)
   vars(2) = var_desc("g","meter second-2","Reduced gravity",'1','L','1')
 
   call create_file(trim(filepath), vars, 2, GV=GV)
-
+  ! NOTE: leave_file_open argument=true leaves the netcdf file open for additional writing
   call write_field(trim(filepath), vars(1)%name, US%R_to_kg_m3*GV%Rlay(:), &
-                   "append", var_desc=vars(1), GV=GV)
+                   "append", var_desc=vars(1), GV=GV, leave_file_open=.true.)
   call write_field(trim(filepath), vars(2)%name, US%L_T_to_m_s**2*US%m_to_Z*GV%g_prime(:), &
                    "append", var_desc=vars(2), GV=GV)
 

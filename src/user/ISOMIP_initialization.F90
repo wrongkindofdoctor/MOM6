@@ -648,8 +648,8 @@ subroutine ISOMIP_initialize_sponges(G, GV, US, tv, PF, use_ALE, CSp, ACSp)
     filename = trim(inputdir)//trim(state_file)
     if (.not.file_exists(filename)) call MOM_error(FATAL, &
           "ISOMIP_initialize_sponges: Unable to find "//trim(filename))
-    call MOM_read_data(filename, eta_var, eta(:,:,:), G%Domain, scale=US%m_to_Z)
-    call MOM_read_data(filename, temp_var, T(:,:,:), G%Domain)
+    call MOM_read_data(filename, eta_var, eta(:,:,:), G%Domain, scale=US%m_to_Z, leave_file_open=.true.)
+    call MOM_read_data(filename, temp_var, T(:,:,:), G%Domain, leave_file_open=.true.)
     call MOM_read_data(filename, salt_var, S(:,:,:), G%Domain)
 
     ! for debugging

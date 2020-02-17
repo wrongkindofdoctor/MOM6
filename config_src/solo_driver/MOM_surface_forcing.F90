@@ -918,7 +918,7 @@ subroutine buoyancy_forcing_from_files(sfc_state, fluxes, day, dt, G, US, CS)
     end select
     if (CS%archaic_OMIP_file) then
       call MOM_read_data(CS%runoff_file, CS%lrunoff_var, temp(:,:), &
-                     G%Domain, timelevel=time_lev, scale=kg_m2_s_conversion)
+                     G%Domain, timelevel=time_lev, scale=kg_m2_s_conversion, leave_file_open=.true.)
       do j=js,je ; do i=is,ie
         fluxes%lrunoff(i,j) = temp(i,j)*US%m_to_L**2*G%IareaT(i,j)
       enddo ; enddo
@@ -929,7 +929,7 @@ subroutine buoyancy_forcing_from_files(sfc_state, fluxes, day, dt, G, US, CS)
       enddo ; enddo
     else
       call MOM_read_data(CS%runoff_file, CS%lrunoff_var, fluxes%lrunoff(:,:), &
-                     G%Domain, timelevel=time_lev, scale=kg_m2_s_conversion)
+                     G%Domain, timelevel=time_lev, scale=kg_m2_s_conversion, leave_file_open=.true.)
       call MOM_read_data(CS%runoff_file, CS%frunoff_var, fluxes%frunoff(:,:), &
                      G%Domain, timelevel=time_lev, scale=kg_m2_s_conversion)
     endif

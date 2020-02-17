@@ -1465,6 +1465,9 @@ subroutine initialize_temp_salt_from_file(T, S, G, param_file, just_read_params)
   character(len=40)  :: mdl = "initialize_temp_salt_from_file"
   character(len=64)  :: temp_var, salt_var ! Temperature and salinity names in files
 
+  temp_var = ""
+  salt_var = ""
+
   just_read = .false. ; if (present(just_read_params)) just_read = just_read_params
 
   if (.not.just_read) call callTree_enter(trim(mdl)//"(), MOM_state_initialization.F90")
@@ -1493,7 +1496,7 @@ subroutine initialize_temp_salt_from_file(T, S, G, param_file, just_read_params)
      " initialize_temp_salt_from_file: Unable to open "//trim(filename))
 
   ! Read the temperatures and salinities from netcdf files.
-  call MOM_read_data(filename, temp_var, T(:,:,:), G%Domain)
+  call MOM_read_data(filename, temp_var, T(:,:,:), G%Domain, leave_file_open=.true.)
 
   salt_filename = trim(inputdir)//trim(salt_file)
   if (.not.file_exists(salt_filename)) call MOM_error(FATAL, &
@@ -1539,7 +1542,7 @@ subroutine initialize_temp_salt_from_profile(T, S, G, param_file, just_read_para
      " initialize_temp_salt_from_profile: Unable to open "//trim(filename))
 
   ! Read the temperatures and salinities from a netcdf file.
-  call MOM_read_data(filename, "PTEMP", T0(:))
+  call MOM_read_data(filename, "PTEMP", T0(:), leave_file_open=.true.)
   call MOM_read_data(filename, "SALT",  S0(:))
 
   do k=1,G%ke ; do j=G%jsc,G%jec ; do i=G%isc,G%iec
@@ -1867,7 +1870,7 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, param_file, C
     ! inflated without causing static instabilities.
     do i=is-1,ie ; pres(i) = tv%P_Ref ; enddo
 
-    call MOM_read_data(filename, potemp_var, tmp(:,:,:), G%Domain)
+    call MOM_read_data(filename, potemp_var, tmp(:,:,:), G%Domain, leave_file_open=.true.)
     call MOM_read_data(filename, salin_var, tmp2(:,:,:), G%Domain)
 
     do j=js,je
@@ -1880,7 +1883,7 @@ subroutine initialize_sponges_file(G, GV, US, use_temperature, tv, param_file, C
 
   ! The remaining calls to set_up_sponge_field can be in any order.
   if ( use_temperature .and. .not. new_sponges) then
-    call MOM_read_data(filename, potemp_var, tmp(:,:,:), G%Domain)
+    call MOM_read_data(filename, potemp_var, tmp(:,:,:), G%Domain, leave_file_open=.true.)
     call set_up_sponge_field(tmp, tv%T, G, nz, CSp)
     call MOM_read_data(filename, salin_var, tmp(:,:,:), G%Domain)
     call set_up_sponge_field(tmp, tv%S, G, nz, CSp)

@@ -475,7 +475,6 @@ function remove_substring(string_in, substring) result(string_out)
    endif
 end function remove_substring
 
-
 !> \namespace mom_string_functions
 !!
 !!  By Alistair Adcroft and Robert Hallberg, last updated Sept. 2013.

@@ -629,12 +629,12 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, OBC, dt_
         endif
       endif
     endif
+   endif
 
-    if (day > CS%Start_time) then
-      continue
-    else
-      call create_file(trim(energypath_nc), vars, num_nc_fields, register_time = .true., G=G, GV=GV)
-    endif
+  if (day > CS%Start_time) then
+    continue
+  else
+    call create_file(trim(energypath_nc), vars, num_nc_fields, register_time = .true., G=G, GV=GV)
   endif
 
   if (CS%do_APE_calc) then
@@ -884,49 +884,67 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, OBC, dt_
   endif
 
   var = real(CS%ntrunc)
+  ! NOTE: the argument leave_file_open =.true. ensures that energypath_nc file is not closed until after the final
+  ! variable is written. Too many consecutive calls to write_field that open the file each time may cause
+  ! MPI communication conflicts from repeated MPI_broadcast calls. 
   call write_field(trim(energypath_nc), vars(1)%name, var, "append", &
-                   var_desc=vars(1), time_level=reday)
+                   var_desc=vars(1), time_level=reday, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(2)%name, toten,"append", &
-                   var_desc=vars(2), time_level=reday)
+                   var_desc=vars(2), time_level=reday, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(3)%name, PE, "append", &
-                   var_desc=vars(3), time_level=reday, GV=GV)
+                   var_desc=vars(3), time_level=reday, GV=GV, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(4)%name, KE, "append", &
-                   var_desc=vars(4), time_level=reday, GV=GV)
+                   var_desc=vars(4), time_level=reday, GV=GV, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(5)%name, H_0APE, "append", &
-                   var_desc=vars(5), time_level=reday, GV=GV)
+                   var_desc=vars(5), time_level=reday, GV=GV, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(6)%name, mass_lay, "append", &
-                   var_desc=vars(6), time_level=reday, GV=GV)
+                   var_desc=vars(6), time_level=reday, GV=GV, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(7)%name, mass_tot, "append", &
-                   var_desc=vars(7), time_level=reday)
+                   var_desc=vars(7), time_level=reday, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(8)%name, mass_chg, "append", &
-                   var_desc=vars(8), time_level=reday)
+                   var_desc=vars(8), time_level=reday, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(9)%name, mass_anom, "append", &
-                   var_desc=vars(9), time_level=reday)
+                   var_desc=vars(9), time_level=reday, leave_file_open=.true.)
   call write_field(trim(energypath_nc), vars(10)%name, max_CFL(1), "append", &
-                   var_desc=vars(10), time_level=reday)
-  call write_field(trim(energypath_nc), vars(11)%name, max_CFL(1), "append", &
-                   var_desc=vars(11), time_level=reday)
+                   var_desc=vars(10), time_level=reday, leave_file_open=.true.)
+  if ((nTr_stocks > 0) .or. (CS%use_temperature)) then
+    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(1), "append", &
+                     var_desc=vars(11), time_level=reday, leave_file_open=.true.)
+  else
+    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(1), "append", &
+                     var_desc=vars(11), time_level=reday)
+  endif
   if (CS%use_temperature) then
     call write_field(trim(energypath_nc), vars(12)%name, 0.001*Salt, "append", &
-                     var_desc=vars(12), time_level=reday)
+                     var_desc=vars(12), time_level=reday, leave_file_open=.true.)
     call write_field(trim(energypath_nc), vars(13)%name, 0.001*salt_chg, "append", &
-                     var_desc=vars(13), time_level=reday)
+                     var_desc=vars(13), time_level=reday, leave_file_open=.true.)
     call write_field(trim(energypath_nc), vars(14)%name, 0.001*salt_anom, "append", &
-                     var_desc=vars(14), time_level=reday)
+                     var_desc=vars(14), time_level=reday, leave_file_open=.true.)
     call write_field(trim(energypath_nc), vars(15)%name, Heat, "append", &
-                     var_desc=vars(15), time_level=reday)
-    call write_field(trim(energypath_nc), vars(16)%name, heat_chg,"append", &
-                     var_desc=vars(16), time_level=reday)
+                     var_desc=vars(15), time_level=reday, leave_file_open=.true.)
+    call write_field(trim(energypath_nc), vars(16)%name, heat_chg, "append", &
+                     var_desc=vars(16), time_level=reday, leave_file_open=.true.)
     call write_field(trim(energypath_nc), vars(17)%name, heat_anom, "append", &
-                     var_desc=vars(17), time_level=reday)
+                     var_desc=vars(17), time_level=reday, leave_file_open=.true.)
     do m=1,nTr_stocks
-      call write_field(trim(energypath_nc), vars(17+m)%name, Tr_stocks(m), "append", &
-                       var_desc=vars(17+m), time_level=reday)
+      if (m==nTr_stocks) then
+        call write_field(trim(energypath_nc), vars(17+m)%name, Tr_stocks(m), "append", &
+                         var_desc=vars(17+m), time_level=reday)
+      else
+        call write_field(trim(energypath_nc), vars(17+m)%name, Tr_stocks(m), "append", &
+                         var_desc=vars(17+m), time_level=reday, leave_file_open=.true.)
+      endif
     enddo
   else
     do m=1,nTr_stocks
-      call write_field(trim(energypath_nc), vars(11+m)%name, Tr_stocks(m), "append", &
-                       var_desc=vars(11+m), time_level=reday)
+      if (m==nTr_stocks) then
+        call write_field(trim(energypath_nc), vars(11+m)%name, Tr_stocks(m), "append", &
+                         var_desc=vars(11+m), time_level=reday)
+      else
+        call write_field(trim(energypath_nc), vars(11+m)%name, Tr_stocks(m), "append", &
+                         var_desc=vars(11+m), time_level=reday, leave_file_open=.true.)
+      endif
     enddo
   endif
 

@@ -681,9 +681,9 @@ subroutine update_offline_from_files(G, GV, nk_input, mean_file, sum_file, snap_
     call MOM_read_data(snap_file, 'h_end', h_end(:,:,1:nk_input), G%Domain, &
                        timelevel=ridx_snap)
     call MOM_read_data(mean_file, 'temp', temp_mean(:,:,1:nk_input), G%Domain, &
-                       timelevel=ridx_sum)
+                       timelevel=ridx_sum, leave_file_open=.true.)
     call MOM_read_data(mean_file, 'salt', salt_mean(:,:,1:nk_input), G%Domain, &
-                       timelevel=ridx_sum)
+                       timelevel=ridx_sum, leave_file_open=.true.)
   endif
 
   do j=js,je ; do i=is,ie
@@ -711,9 +711,14 @@ subroutine update_offline_from_files(G, GV, nk_input, mean_file, sum_file, snap_
     fluxes%netMassOut(:,:) = 0.0
     fluxes%netMassIn(:,:) = 0.0
     call MOM_read_data(surf_file,'massout_flux_sum',fluxes%netMassOut, G%Domain, &
-        timelevel=ridx_sum)
-    call MOM_read_data(surf_file,'massin_flux_sum', fluxes%netMassIn,  G%Domain, &
-        timelevel=ridx_sum)
+        timelevel=ridx_sum, leave_file_open=.true.)
+    if (read_mld) then 
+      call MOM_read_data(surf_file,'massin_flux_sum', fluxes%netMassIn,  G%Domain, &
+           timelevel=ridx_sum, leave_file_open=.true.)
+    else
+      call MOM_read_data(surf_file,'massin_flux_sum', fluxes%netMassIn,  G%Domain, &
+           timelevel=ridx_sum)
+    endif
 
     do j=js,je ; do i=is,ie
       if (G%mask2dT(i,j)<1.0) then
@@ -734,7 +739,7 @@ subroutine update_offline_from_files(G, GV, nk_input, mean_file, sum_file, snap_
     ! direct fluxes in the visible and near-infrared bands. For convenience, we store the
     ! sum of the direct and diffuse fluxes in the 'dir' field and set the 'dif' fields to zero
     call MOM_read_data(mean_file,'sw_vis',fluxes%sw_vis_dir, G%Domain, &
-        timelevel=ridx_sum)
+        timelevel=ridx_sum, leave_file_open=.true.)
     call MOM_read_data(mean_file,'sw_nir',fluxes%sw_nir_dir, G%Domain, &
        timelevel=ridx_sum)
     fluxes%sw_vis_dir(:,:) = fluxes%sw_vis_dir(:,:)*0.5

@@ -270,7 +270,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! Read X from the supergrid. \note: tmpZ is defined on the data domain
   tmpZ(:,:) = 999.
-  call MOM_read_data(filename, 'x', tmpZ, SGdom, x_position=EAST_FACE, y_position=NORTH_FACE)
+  call MOM_read_data(filename, 'x', tmpZ, SGdom, x_position=EAST_FACE, y_position=NORTH_FACE, leave_file_open=.true.)
 
   if (lon_bug) then
     call pass_var(tmpZ, SGdom, position=CORNER)
@@ -295,7 +295,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! Read Y from the supergrid
   tmpZ(:,:) = 999.
-  call MOM_read_data(filename, 'y', tmpZ, SGdom, x_position=EAST_FACE, y_position=NORTH_FACE)
+  call MOM_read_data(filename, 'y', tmpZ, SGdom, x_position=EAST_FACE, y_position=NORTH_FACE, leave_file_open=.true.)
 
   call pass_var(tmpZ, SGdom, position=CORNER)
   call extrapolate_metric(tmpZ, 2*(G%jsc-G%jsd)+2, missing=999.)
@@ -314,8 +314,8 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! Read DX,DY from the supergrid
   tmpU(:,:) = 0. ; tmpV(:,:) = 0.
-  call MOM_read_data(filename,'dx',tmpV,SGdom,y_position=NORTH_FACE)
-  call MOM_read_data(filename,'dy',tmpU,SGdom,x_position=EAST_FACE)
+  call MOM_read_data(filename,'dx',tmpV,SGdom,y_position=NORTH_FACE, leave_file_open=.true.)
+  call MOM_read_data(filename,'dy',tmpU,SGdom,x_position=EAST_FACE, leave_file_open=.true.)
   call pass_vector(tmpU, tmpV, SGdom, To_All+Scalar_Pair, CGRID_NE)
   call extrapolate_metric(tmpV, 2*(G%jsc-G%jsd)+2, missing=0.)
   call extrapolate_metric(tmpU, 2*(G%jsc-G%jsd)+2, missing=0.)
@@ -385,7 +385,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   start(2) = 2 ; nread(1) = ni+1 ; nread(2) = 2
   allocate( tmpGlbl(ni+1,2) )
   ! read x into the tmpGlbl buffer
-  call MOM_read_data(fileName, "x", tmpGlbl, define_diagnostic_axes=.true., G=G)
+  call MOM_read_data(fileName, "x", tmpGlbl, define_diagnostic_axes=.true., G=G, leave_file_open=.true.)
  ! I don't know why the second axis is 1 or 2 here. -RWH
   do i=G%isg,G%ieg
     G%gridLonT(i) = tmpGlbl(2*(i-G%isg)+2,2)
@@ -401,7 +401,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   start(:) = 1 ; nread(:) = 1
   start(1) = int(ni/4)+1 ; nread(2) = nj+1
   ! read y into the tmpGlbl buffer
-  call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, grid_type="t")
+  call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, grid_type="t", leave_file_open=.true.)
 
   do j=G%jsg,G%jeg
     G%gridLatT(j) = tmpGlbl(1,2*(j-G%jsg)+2)
