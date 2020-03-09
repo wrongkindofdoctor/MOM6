@@ -3507,10 +3507,7 @@ subroutine field_size(file_name, variable_name, dim_sizes)
                    " not found in file "//trim(file_name))
 
   ndims = get_variable_num_dimensions(fileObj, trim(variable_name))
-  if (size(dim_sizes) .ne. ndims) &
-    call MOM_error(FATAL, "MOM_io::field_size: The number of dimensions of variable "//trim(variable_name)// &
-    " does not match the size of the dim_sizes argument passed to the routine")
-  call get_variable_size(fileObj, trim(variable_name), dim_sizes)
+  call get_variable_size(fileObj, trim(variable_name), dim_sizes(1:ndims))
 
   if (check_if_open(fileobj)) call fms2_close_file(fileobj)
 end subroutine field_size
