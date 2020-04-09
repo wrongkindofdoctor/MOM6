@@ -2,7 +2,8 @@
 module MOM_string_functions
 
 ! This file is part of MOM6. See LICENSE.md for the license.
-use MOM_error_handler, only : MOM_error, WARNING
+use iso_fortran_env, only : stdout=>output_unit, stderr=>error_unit
+
 implicit none ; private
 
 public lowercase, uppercase
@@ -321,7 +322,7 @@ logical function string_functions_unit_tests(verbose)
   logical :: fail, v
   fail = .false.
   v = verbose
-  write(*,*) '==== MOM_string_functions: string_functions_unit_tests ==='
+  write(stdout,*) '==== MOM_string_functions: string_functions_unit_tests ==='
   fail = fail .or. localTestS(v,left_int(-1),'-1')
   fail = fail .or. localTestS(v,left_ints(i(:)),'-1, 1, 3, 3, 0')
   fail = fail .or. localTestS(v,left_real(0.),'0.0')
@@ -351,7 +352,7 @@ logical function string_functions_unit_tests(verbose)
   fail = fail .or. localTestR(v,extract_real("1.,2.",",",2),2.)
   fail = fail .or. localTestR(v,extract_real("1.,2.",",",3),0.)
   fail = fail .or. localTestR(v,extract_real("1.,2.",",",4,4.),4.)
-  if (.not. fail) write(*,*) 'Pass'
+  if (.not. fail) write(stdout,*) 'Pass'
   string_functions_unit_tests = fail
 end function string_functions_unit_tests
 
@@ -363,8 +364,11 @@ logical function localTestS(verbose,str1,str2)
   localTestS=.false.
   if (trim(str1)/=trim(str2)) localTestS=.true.
   if (localTestS .or. verbose) then
-    write(*,*) '>'//trim(str1)//'<'
-    if (localTestS) write(*,*) trim(str1),':',trim(str2), '<-- FAIL'
+    write(stdout,*) '>'//trim(str1)//'<'
+    if (localTestS) then
+      write(stdout,*) trim(str1),':',trim(str2), '<-- FAIL'
+      write(stderr,*) trim(str1),':',trim(str2), '<-- FAIL'
+    endif
   endif
 end function localTestS
 
@@ -376,8 +380,11 @@ logical function localTestI(verbose,i1,i2)
   localTestI=.false.
   if (i1/=i2) localTestI=.true.
   if (localTestI .or. verbose) then
-    write(*,*) i1,i2
-    if (localTestI) write(*,*) i1,'!=',i2, '<-- FAIL'
+    write(stdout,*) i1,i2
+    if (localTestI) then
+      write(stdout,*) i1,'!=',i2, '<-- FAIL'
+      write(stderr,*) i1,'!=',i2, '<-- FAIL'
+    endif
   endif
 end function localTestI
 
@@ -389,8 +396,11 @@ logical function localTestR(verbose,r1,r2)
   localTestR=.false.
   if (r1/=r2) localTestR=.true.
   if (localTestR .or. verbose) then
-    write(*,*) r1,r2
-    if (localTestR) write(*,*) r1,'!=',r2, '<-- FAIL'
+    write(stdout,*) r1,r2
+    if (localTestR) then
+      write(stdout,*) r1,'!=',r2, '<-- FAIL'
+      write(stderr,*) r1,'!=',r2, '<-- FAIL'
+    endif
   endif
 end function localTestR
 
