@@ -259,12 +259,13 @@ subroutine register_ice_shelf_dyn_restarts(G, param_file, CS, restart_CS)
                                 longname="ice sheet/shelf vertically averaged temperature", units="deg C")
     call register_restart_field(CS%OD_av, "OD_av", .true., restart_CS, &
                                 longname="Average open ocean depth in a cell",units="m")
-    call register_restart_field(CS%float_frac, "float_frac", .true., restart_CS, &
-                                longname="fractional degree of grounding", units="nondim")
+     call register_restart_field(CS%ground_frac, "ground_frac", .true., restart_CS, &
+                                longname="fractional degree of grounding",units="nondim")
     call register_restart_field(CS%ice_visc, "viscosity", .true., restart_CS, &
                                 longname="Volume integrated Glens law ice viscosity", units="kg m2 s-1")
-    call register_restart_field(CS%taub_beta_eff, "tau_b_beta", .true., restart_CS, &
+    call register_restart_field(CS%basal_traction, "tau_b_beta", .true., restart_CS, &
                                 longname="The area integrated basal traction coefficient", units="kg m2 s-1")
+  endif
 end subroutine register_ice_shelf_dyn_restarts
 
 !> Initializes shelf model data, parameters and diagnostics

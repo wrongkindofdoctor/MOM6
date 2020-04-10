@@ -24,13 +24,8 @@ use MOM_fixed_initialization, only : MOM_initialize_rotation
 use user_initialization, only : user_initialize_topography
 use MOM_io, only : MOM_read_data, file_exists, slasher
 use MOM_restart, only : register_restart_field, query_initialized, save_restart
-<<<<<<< HEAD
 use MOM_restart, only : restart_init, restore_state, MOM_restart_CS, write_initial_conditions
-use MOM_time_manager, only : time_type, time_type_to_real, time_type_to_real, real_to_time
-=======
-use MOM_restart, only : restart_init, restore_state, MOM_restart_CS
 use MOM_time_manager, only : time_type, time_type_to_real, real_to_time, operator(>), operator(-)
->>>>>>> dev/gfdl
 use MOM_transcribe_grid, only : copy_dyngrid_to_MOM_grid, copy_MOM_grid_to_dyngrid
 use MOM_unit_scaling, only : unit_scale_type, unit_scaling_init, fix_restart_unit_scaling
 use MOM_variables, only : surface
@@ -1440,15 +1435,11 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces, fl
   call register_restart_field(ISS%h_shelf, "h_shelf", .true., CS%restart_CSp, &
                               longname="ice sheet/shelf thickness", units="m")
   call register_restart_field(US%m_to_Z_restart, "m_to_Z", .false., CS%restart_CSp, &
-<<<<<<< HEAD
                               longname="Height unit conversion factor", units="Z meter-1")
-=======
-                              "Height unit conversion factor", "Z meter-1")
   call register_restart_field(US%m_to_L_restart, "m_to_L", .false., CS%restart_CSp, &
-                              "Length unit conversion factor", "L meter-1")
+                              longname="Length unit conversion factor", units="L meter-1")
   call register_restart_field(US%kg_m3_to_R_restart, "kg_m3_to_R", .false., CS%restart_CSp, &
-                              "Density unit conversion factor", "R m3 kg-1")
->>>>>>> dev/gfdl
+                              longname="Density unit conversion factor", units="R m3 kg-1")
   if (CS%active_shelf_dynamics) then
     call register_restart_field(ISS%hmask, "h_mask", .true., CS%restart_CSp, &
                                 longname="ice sheet/shelf thickness mask" ,units="none")
@@ -1462,13 +1453,9 @@ subroutine initialize_ice_shelf(param_file, ocn_grid, Time, CS, diag, forces, fl
   !GMM - I think we do not need to save ustar_shelf and iceshelf_melt in the restart file
   !if (.not. CS%solo_ice_sheet) then
   !  call register_restart_field(fluxes%ustar_shelf, "ustar_shelf", .false., CS%restart_CSp, &
-<<<<<<< HEAD
   !                              longname="Friction velocity under ice shelves", units="m s-1")
   !  call register_restart_field(fluxes%iceshelf_melt, "iceshelf_melt", .false., CS%restart_CSp, &
   !                              longname"Ice Shelf Melt Rate", units="m year-1")
-=======
-  !                              "Friction velocity under ice shelves", "m s-1")
->>>>>>> dev/gfdl
   !endif
 
   CS%restart_output_dir = dirs%restart_output_dir
