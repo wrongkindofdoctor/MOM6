@@ -1347,7 +1347,6 @@ subroutine write_ocean_geometry_file(G, param_file, directory, geom_file, US)
     call write_field(trim(filepath), vars(19)%name, G%mask2dT, "append", G%Domain, vars(19), dG=G)
   endif
 
-
   call callTree_leave('write_ocean_geometry_file()')
 end subroutine write_ocean_geometry_file
 

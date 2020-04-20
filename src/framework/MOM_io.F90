@@ -18,7 +18,8 @@ use ensemble_manager_mod, only : get_ensemble_id
 use fms_mod,              only : write_version_number, open_namelist_file, check_nml_error
 use MOM_string_functions, only : extract_word
 use mpp_mod,              only : mpp_max, mpp_pe, mpp_npes
-use mpp_domains_mod,      only : domain1d, domain2d, domainug, mpp_get_domain_components, mpp_get_data_domain
+use mpp_domains_mod,      only : domain1d, domain2d, domainug, mpp_get_domain_components, &
+                                 mpp_get_data_domain, mpp_get_compute_domain, mpp_get_global_domain
 use mpp_domains_mod,      only : mpp_get_domain_npes, mpp_define_io_domain, mpp_get_io_domain, mpp_get_io_domain_layout
 use mpp_domains_mod,      only : CENTER, CORNER, NORTH_FACE=>NORTH, EAST_FACE=>EAST
 use mpp_io_mod,           only : open_file => mpp_open, close_file => mpp_close
@@ -497,7 +498,7 @@ end subroutine create_file
 !> This function uses the fms_io function write_data to write a 1-D domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_1d_DD(filename, fieldname, data, mode, domain, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_1d_DD(filename, fieldname, data, mode, domain, var_desc, start_index, edge_lengths, time_level, &
                              time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
@@ -505,7 +506,7 @@ subroutine write_field_1d_DD(filename, fieldname, data, mode, domain, var_desc, 
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type),intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
   type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(1), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(1), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(1), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -569,11 +570,11 @@ subroutine write_field_1d_DD(filename, fieldname, data, mode, domain, var_desc, 
   if (present(GV)) &
   call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, '1', dim_names, &
                                   dim_lengths, num_dims, GV=GV)
-  ! define the corner and edge_length arguments
+  ! define the start and edge_length arguments
   start(:) = 1
   nwrite(:) = dim_lengths(1)
-  if (present(corner)) then
-    start(1) = max(1,corner(1))
+  if (present(start_index)) then
+    start(1) = max(1, start_index(1))
   endif
 
   if (present(edge_lengths)) then
@@ -655,7 +656,7 @@ end subroutine write_field_1d_DD
 !> This function uses the fms_io function write_data to write a 2-D domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_2d_DD(filename, fieldname, data, mode, domain, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_2d_DD(filename, fieldname, data, mode, domain, var_desc, start_index, edge_lengths, time_level, &
                              time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
@@ -663,7 +664,7 @@ subroutine write_field_2d_DD(filename, fieldname, data, mode, domain, var_desc, 
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
   type(vardesc), intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(2), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(2), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -730,13 +731,13 @@ subroutine write_field_2d_DD(filename, fieldname, data, mode, domain, var_desc, 
   if (present(GV)) &
     call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, '1', dim_names, &
                                     dim_lengths, num_dims, GV=GV)
-  ! set the start (corner) and nwrite (edge_lengths) values
+  ! set the start (start_index) and nwrite (edge_lengths) values
   start(:) = 1
   nwrite(:) = dim_lengths(1:ndims)
 
-  if (present(corner)) then
+  if (present(start_index)) then
     do i=1,ndims
-      start(i) = max(1,corner(i))
+      start(i) = max(1,start_index(i))
     enddo
   endif
 
@@ -830,7 +831,7 @@ end subroutine write_field_2d_DD
 !> This function uses the fms_io function write_data to write a 3-D domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_3d_DD(filename, fieldname, data, mode, domain, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_3d_DD(filename, fieldname, data, mode, domain, var_desc, start_index, edge_lengths, time_level, &
                              time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
@@ -838,7 +839,7 @@ subroutine write_field_3d_DD(filename, fieldname, data, mode, domain, var_desc, 
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type),  intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
   type(vardesc), intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(3), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(3), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(3), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -902,13 +903,13 @@ subroutine write_field_3d_DD(filename, fieldname, data, mode, domain, var_desc, 
   if (present(GV)) &
     call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, '1', dim_names, &
                                     dim_lengths, num_dims, GV=GV)
-  ! set the start (corner) and nwrite (edge_lengths) values
+  ! set the start (start_index) and nwrite (edge_lengths) values
   ndims = 3
   start(:) = 1
   nwrite(:) = dim_lengths(1:3)
-  if (present(corner)) then
+  if (present(start_index)) then
     do i=1,ndims
-      start(i) = max(1,corner(i))
+      start(i) = max(1,start_index(i))
     enddo
   endif
 
@@ -1002,7 +1003,7 @@ end subroutine write_field_3d_DD
 !> This function uses the fms_io function write_data to write a 4-D domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_4d_DD(filename, fieldname, data, mode, domain, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_4d_DD(filename, fieldname, data, mode, domain, var_desc, start_index, edge_lengths, time_level, &
                              time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
@@ -1010,7 +1011,7 @@ subroutine write_field_4d_DD(filename, fieldname, data, mode, domain, var_desc, 
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
   type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(4), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(4), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(4), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -1072,13 +1073,13 @@ subroutine write_field_4d_DD(filename, fieldname, data, mode, domain, var_desc, 
   if (present(GV)) &
     call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, var_desc%t_grid, dim_names, &
                                     dim_lengths, num_dims, GV=GV)
-  ! set the start (corner) and nwrite (edge_lengths) values
+  ! set the start (start_index) and nwrite (edge_lengths) values
   ndims = 4
   start(:) = 1
   nwrite(:) = dim_lengths(:)
-  if (present(corner)) then
+  if (present(start_index)) then
     do i=1,ndims
-      start(i) = max(1,corner(i))
+      start(i) = max(1,start_index(i))
     enddo
   endif
 
@@ -1283,14 +1284,14 @@ end subroutine write_scalar
 !> This function uses the fms_io function write_data to write a 1-D non-domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_1d_noDD(filename, fieldname, data, mode, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_1d_noDD(filename, fieldname, data, mode, var_desc, start_index, edge_lengths, time_level, &
                                time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:), intent(in) :: data !< The 1-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(vardesc), intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(1), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(1), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(1), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -1355,11 +1356,11 @@ subroutine write_field_1d_noDD(filename, fieldname, data, mode, var_desc, corner
   if (present(GV)) &
     call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, '1', dim_names, &
                                     dim_lengths, num_dims, GV=GV)
-  ! set the start (corner) and nwrite (edge_lengths) values
+  ! set the start (start_index) and nwrite (edge_lengths) values
   start(:) = 1
   nwrite(:) = dim_lengths(1)
-  if (present(corner)) then
-    start(1) = max(1,corner(1))
+  if (present(start_index)) then
+    start(1) = max(1,start_index(1))
   endif
 
   if (present(edge_lengths)) then
@@ -1451,14 +1452,14 @@ end subroutine write_field_1d_noDD
 !> This function uses the fms_io function write_data to write a scalar variable named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_2d_noDD(filename, fieldname, data, mode, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_2d_noDD(filename, fieldname, data, mode, var_desc, start_index, edge_lengths, time_level, &
                                time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:), intent(in) :: data !< The 2-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(vardesc), intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(2), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(2), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -1525,13 +1526,13 @@ subroutine write_field_2d_noDD(filename, fieldname, data, mode, var_desc, corner
     call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, '1', dim_names, &
                                       dim_lengths, num_dims, GV=GV)
 
-  ! set the start (corner) and nwrite (edge_lengths) values
+  ! set the start (start_index) and nwrite (edge_lengths) values
   ndims=2
   start(:) = 1
   nwrite(:) = dim_lengths(1:2)
-  if (present(corner)) then
+  if (present(start_index)) then
     do i=1,ndims
-      start(i) = max(1,corner(i))
+      start(i) = max(1,start_index(i))
     enddo
   endif
 
@@ -1626,14 +1627,14 @@ end subroutine write_field_2d_noDD
 !> This function uses the fms_io function write_data to write a 3-D non-domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_3d_noDD(filename, fieldname, data, mode, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_3d_noDD(filename, fieldname, data, mode, var_desc, start_index, edge_lengths, time_level, &
                                time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:,:), intent(in) :: data !< The 3-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(vardesc), intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(4), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(4), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(4), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -1697,13 +1698,13 @@ subroutine write_field_3d_noDD(filename, fieldname, data, mode, var_desc, corner
   if (present(GV)) &
     call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, '1', dim_names, &
                                     dim_lengths, num_dims, GV=GV)
-  ! set the start (corner) and nwrite (edge_lengths) values
+  ! set the start (start_index) and nwrite (edge_lengths) values
   ndims = 3
   start(:) = 1
   nwrite(:) = dim_lengths(1:3)
-  if (present(corner)) then
+  if (present(start_index)) then
     do i=1,ndims
-      start(i) = max(1,corner(i))
+      start(i) = max(1,start_index(i))
     enddo
   endif
 
@@ -1798,14 +1799,14 @@ end subroutine write_field_3d_noDD
 !> This function uses the fms_io function write_data to write a 4-D non-domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
 !! file write procedure.
-subroutine write_field_4d_noDD(filename, fieldname, data, mode, var_desc, corner, edge_lengths, time_level, &
+subroutine write_field_4d_noDD(filename, fieldname, data, mode, var_desc, start_index, edge_lengths, time_level, &
                                time_units, scale, checksums, G, dG, GV, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:,:,:), intent(in) :: data !< The 4-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(vardesc), intent(in) :: var_desc !< structure describing variable output
-  integer, dimension(4), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(4), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(4), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
   real, optional, intent(in) :: time_level !< time value to write
@@ -1868,12 +1869,12 @@ subroutine write_field_4d_noDD(filename, fieldname, data, mode, var_desc, corner
   if (present(GV)) &
     call get_var_dimension_features(var_desc%hor_grid, var_desc%z_grid, var_desc%t_grid, dim_names, &
                                     dim_lengths, num_dims, GV=GV)
-  ! set the start (corner) and nwrite (edge_lengths) values
+  ! set the start (start_index) and nwrite (edge_lengths) values
   start(:) = 1
   nwrite(:) = dim_lengths(:)
-  if (present(corner)) then
+  if (present(start_index)) then
     do i=1,ndims
-      start(i) = max(1, corner(i))
+      start(i) = max(1, start_index(i))
     enddo
   endif
 
@@ -1965,13 +1966,13 @@ end subroutine write_field_4d_noDD
 
 !> This routine calls the fms_io read_data subroutine to read 1-D domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, corner, edge_lengths, timelevel, scale, &
+subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, start_index, edge_lengths, timelevel, scale, &
                                x_position, y_position, leave_file_open)
   character(len=*), intent(in) :: filename !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, dimension(:), intent(inout) :: data !< The 1-dimensional data array to pass to read_data
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  integer, dimension(1), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(1), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(1), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                              !! variable size
   integer, optional, intent(in) :: timelevel !< time level to read
@@ -2024,15 +2025,15 @@ subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, corner, edge_l
                                             trim(filename))
   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
-  ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  ! set the start and nread values that will be passed as the read_data start_index and edge_lengths arguments
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
   start(1)=1
   if (present(timelevel)) then
     if (is_dimension_unlimited(fileobj_read_dd, dim_names(1))) start(1) = timelevel
-  elseif (present(corner)) then
-    start(1) = corner(1)
+  elseif (present(start_index)) then
+    start(1) = start_index(1)
   endif
 
   if (present(edge_lengths)) then
@@ -2056,13 +2057,13 @@ end subroutine MOM_read_data_1d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 2-D domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, corner, edge_lengths, timelevel, scale, &
+subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, edge_lengths, timelevel, scale, &
                                x_position, y_position, leave_file_open)
   character(len=*), intent(in) :: filename  !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, dimension(:,:), intent(inout) :: data !< The 2-dimensional data array to pass to read_data
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  integer, dimension(2), optional, intent(in) :: corner !< starting indices of data buffer. Default is 1
+  integer, dimension(2), optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
   integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in.
                                                               !! Default values are the variable dimension sizes
   integer, optional, intent(in) :: timelevel !< time level to read
@@ -2075,10 +2076,11 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, corner, edge_l
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
   integer :: i, dim_unlim_index
-  integer, dimension(2) :: start, nread ! indices for first data value and number of values to read
+  integer, dimension(2) :: start, nread, first, last ! indices for first data value and number of values to read
   character(len=40), dimension(2) :: dim_names ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
-  integer :: xpos, ypos ! x and y domain positions
+  integer :: xpos, ypos, pos ! x and y domain positions
+  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
 
   xpos = CENTER
   ypos = CENTER
@@ -2122,7 +2124,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, corner, edge_l
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
   start(:) = 1
-  if (present(corner)) start = corner
+  if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
@@ -2145,8 +2147,27 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, corner, edge_l
       call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_DD: time level specified, but variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
   endif
+
+  pos = CENTER
+  if (present(x_position)) then
+    if (present(y_position)) then
+      pos = CORNER
+    else
+      pos = xpos
+    endif
+  elseif (present(y_position)) then
+    pos = ypos
+  endif
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos) ! Get the global indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
+  last(1) = iec - isg + 1 ! get array indices for the axis data
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
+  nread(1) = last(1) - first(1) + 1
+  nread(2) = last(2) - first(2) + 1
   ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=first, edge_lengths=nread)
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2154,20 +2175,20 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, corner, edge_l
   ! close the file
   if (close_the_file) then
     if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
-     if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
+    if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
     file_var_meta_DD%nvars = 0
   endif
 end subroutine MOM_read_data_2d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 3-D domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, corner, edge_lengths, timelevel, scale, &
+subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, edge_lengths, timelevel, scale, &
                                x_position, y_position, leave_file_open)
   character(len=*), intent(in) :: filename  !< The name of the file to read
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, dimension(:,:,:), intent(inout) :: data !< The 3-dimensional data array to pass to read_data
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  integer, dimension(3), optional, intent(in) :: corner !< starting indices of data buffer. Default is 1
+  integer, dimension(3), optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
   integer, dimension(3), optional, intent(in) :: edge_lengths !< number of data values to read in.
                                                              !! Default values are the variable dimension sizes
   integer, optional, intent(in) :: timelevel !< time level to read
@@ -2225,7 +2246,7 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, corner, edge_l
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
   start(:) = 1
-  if (present(corner)) start = corner
+  if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
@@ -2264,13 +2285,13 @@ end subroutine MOM_read_data_3d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 4-D domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, corner, edge_lengths, timelevel, scale, &
+subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, edge_lengths, timelevel, scale, &
                                x_position, y_position, leave_file_open)
   character(len=*),       intent(in) :: filename  !< The name of the file to read
   character(len=*),       intent(in) :: fieldname !< The variable name of the data in the file
   real, dimension(:,:,:,:), intent(inout) :: data !< The 4-dimensional data array to pass to read_data
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  integer, dimension(4),  optional, intent(in) :: corner !< starting indices of data buffer. Default is 1
+  integer, dimension(4),  optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
   integer, dimension(4),  optional, intent(in) :: edge_lengths !< number of data values to read in.
                                                               !! Default values are the variable dimension sizes
   integer, optional, intent(in) :: timelevel !< time level to read
@@ -2328,7 +2349,7 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, corner, edge_l
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
   start(:) = 1
-  if (present(corner)) start = corner
+  if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
@@ -2414,11 +2435,11 @@ end subroutine MOM_read_data_scalar
 
 !> This routine calls the fms_io read_data subroutine to read 1-D non-domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_1d_noDD(filename, fieldname, data, corner, edge_lengths, timelevel, scale, leave_file_open)
+subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_lengths, timelevel, scale, leave_file_open)
   character(len=*),       intent(in) :: filename !< The name of the file to read
   character(len=*),       intent(in) :: fieldname !< The variable name of the data in the file
   real, dimension(:),     intent(inout) :: data !< The 1-dimensional data array to pass to read_data
-  integer, dimension(1), optional, intent(in) :: corner !< starting index of data buffer. Default is 1
+  integer, dimension(1), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(1), optional, intent(in) :: edge_lengths !< number of data values to read in; default is
                                                              !! the variable size
   integer,      optional, intent(in) :: timelevel !< time level to read
@@ -2466,8 +2487,8 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, corner, edge_lengths
   start(1) = 1
   if (present(timelevel)) then
     if(is_dimension_unlimited(fileobj_read, dim_names(1))) start(1) = timelevel
-  elseif (present(corner)) then
-    start(1) = corner(1)
+  elseif (present(start_index)) then
+    start(1) = start_index(1)
   endif
 
   if (present(edge_lengths)) then
@@ -2492,11 +2513,11 @@ end subroutine MOM_read_data_1d_noDD
 
 !> This routine calls the fms_io read_data subroutine to read 2-D non-domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_2d_noDD(filename, fieldname, data, corner, edge_lengths, timelevel, scale, leave_file_open)
+subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_lengths, timelevel, scale, leave_file_open)
   character(len=*),       intent(in)    :: filename  !< The name of the file to read
   character(len=*),       intent(in)    :: fieldname !< The variable name of the data in the file
   real, dimension(:,:),   intent(inout) :: data !< The 2-dimensional data array to pass to read_data
-  integer, dimension(2),  optional, intent(in) :: corner !< starting indices of data buffer. Default is 1
+  integer, dimension(2),  optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
   integer, dimension(2),  optional, intent(in) :: edge_lengths !< number of data values to read in.
                                                               !! Default values are the variable dimension sizes
   integer, optional, intent(in) :: timelevel !< time level to read
@@ -2541,7 +2562,7 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, corner, edge_lengths
   call get_variable_dimension_names(fileobj_read, trim(fieldname), dim_names)
 
   start(:) = 1
-  if (present(corner)) start = corner
+  if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
@@ -2581,11 +2602,11 @@ end subroutine MOM_read_data_2d_noDD
 
 !> This routine calls the fms_io read_data subroutine to read 3-D non-domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_3d_noDD(filename, fieldname, data, corner, edge_lengths, timelevel, scale, leave_file_open)
+subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_lengths, timelevel, scale, leave_file_open)
   character(len=*),       intent(in)    :: filename  !< The name of the file to read
   character(len=*),       intent(in)    :: fieldname !< The variable name of the data in the file
   real, dimension(:,:,:), intent(inout) :: data !< The 3-dimensional data array to pass to read_data
-  integer, dimension(3), optional, intent(in) :: corner !< starting indices of data buffer. Default is 1
+  integer, dimension(3), optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
   integer, dimension(3), optional, intent(in) :: edge_lengths !< number of data values to read in.
                                                               !! Default values are the variable dimension sizes
   integer, optional, intent(in) :: timelevel !< time level to read
@@ -2629,7 +2650,7 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, corner, edge_lengths
   call get_variable_dimension_names(fileobj_read, trim(fieldname), dim_names)
 
   start(:) = 1
-  if (present(corner)) start = corner
+  if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
@@ -2669,11 +2690,11 @@ end subroutine MOM_read_data_3d_noDD
 
 !> This routine calls the fms_io read_data subroutine to read 4-D non-domain-decomposed data field named "fieldname"
 !! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call.
-subroutine MOM_read_data_4d_noDD(filename, fieldname, data, corner, edge_lengths, timelevel, scale, leave_file_open)
+subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_lengths, timelevel, scale, leave_file_open)
   character(len=*),       intent(in)    :: filename  !< The name of the file to read
   character(len=*),       intent(in)    :: fieldname !< The variable name of the data in the file
   real, dimension(:,:,:,:),   intent(inout) :: data !< The 4-dimensional array to pass to read_data
-  integer, dimension(4),  optional, intent(in) :: corner !< starting indices of data buffer. Default is 1
+  integer, dimension(4),  optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
   integer, dimension(4),  optional, intent(in) :: edge_lengths !< number of data values to read in.
                                                               !! Default values are the variable dimension sizes
   integer, optional, intent(in) :: timelevel !< time level to read
@@ -2717,7 +2738,7 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, corner, edge_lengths
   call get_variable_dimension_names(fileobj_read, trim(fieldname), dim_names)
 
   start(:) = 1
-  if (present(corner)) start = corner
+  if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
@@ -2762,7 +2783,7 @@ end subroutine MOM_read_data_4d_noDD
 !! Next, a search is performed on the masked data for the column (longitude) that contains the maximum number of non-NAN
 !! latitude points, and the resulting index is used to define output data array that sets the "lath" and "latq" values.
 !! Finally, the indexed data is multipled by the optional scale argument if needed.
-subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_diagnostic_axes, G, corner, &
+subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_diagnostic_axes, G, start_index, &
                                            edge_lengths, timelevel, scale, grid_type, leave_file_open)
   character(len=*),       intent(in)    :: filename  !< The name of the file to read
   character(len=*),       intent(in)    :: fieldname !< The variable name of the data in the file
@@ -2772,7 +2793,7 @@ subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_dia
                                                    !! the diagnostic axes
   type(dyn_horgrid_type), optional, intent(in) :: G !< The dynamic horizontal grid type; required if
                                                     !! define_diagnostic_axes=.true.
-  integer, dimension(2),  optional, intent(in) :: corner !< starting indices of data buffer. Default is 1
+  integer, dimension(2),  optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
   integer, dimension(2),  optional, intent(in) :: edge_lengths !< number of data values to read in.
   logical, optional, intent(in) :: leave_file_open !< if .true., leave file open
   !! Default values are the variable dimension sizes
@@ -2810,7 +2831,7 @@ subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_dia
   enddo
 
   start(:) = 1
-  if (present(corner)) start = corner
+  if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) nread = edge_lengths
 

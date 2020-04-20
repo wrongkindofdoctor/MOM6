@@ -6,6 +6,7 @@ module MOM_transform_FMS
 use horiz_interp_mod, only : horiz_interp_type
 use MOM_error_handler, only : MOM_error, FATAL
 use MOM_io, only : fieldtype, write_field
+use MOM_domains, only : MOM_domain_type
 use mpp_domains_mod, only : domain2D
 use fms_mod, only : mpp_chksum
 use time_manager_mod, only : time_type
@@ -173,129 +174,182 @@ end function rotated_mpp_chksum_real_4d
 
 !> Write the rotation of a 1d field to an FMS output file
 !! This function is provided to support the full FMS write_field interface.
-subroutine rotated_write_field_real_0d(io_unit, field_md, field, tstamp, turns)
-  integer, intent(in) :: io_unit              !> File I/O unit handle
+subroutine rotated_write_field_real_0d(filepath, fieldname, field_md, nc_mode, field, tstamp, turns, leave_file_open)
+  !integer, intent(in) :: io_unit              !> File I/O unit handle
+  character(len=*), intent(in) :: filepath    !> full path to file name
+  character(len=*), intent(in) :: fieldname   !> name of the field to write to the file
   type(fieldtype), intent(in) :: field_md     !> FMS field metadata
-  real, intent(inout) :: field                !> Unrotated field array
+  character(len=*), intent(in) :: nc_mode     !> write or append
+  real, target, intent(inout) :: field        !> Unrotated field array
   real, optional, intent(in) :: tstamp        !> Model timestamp
   integer, optional, intent(in) :: turns      !> Number of quarter-turns
+  logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
+
+  real, pointer :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
 
   if (present(turns)) &
     call MOM_error(FATAL, "Rotation not supported for 0d fields.")
 
-  call write_field(io_unit, field_md, field, tstamp=tstamp)
+  !call write_field(io_unit, field_md, field, tstamp=tstamp)
+  data_tmp => field
+  call write_field(trim(filepath), fieldname, data_tmp, trim(nc_mode), &
+                   leave_file_open=leave_file_open)
+  if (associated(data_tmp)) nullify(data_tmp)
 end subroutine rotated_write_field_real_0d
 
 
 !> Write the rotation of a 1d field to an FMS output file
 !! This function is provided to support the full FMS write_field interface.
-subroutine rotated_write_field_real_1d(io_unit, field_md, field, tstamp, turns)
-  integer, intent(in) :: io_unit              !> File I/O unit handle
+subroutine rotated_write_field_real_1d(filepath, fieldname, field_md, nc_mode, field, tstamp, turns, leave_file_open)
+  !integer, intent(in) :: io_unit              !> File I/O unit handle
+  character(len=*), intent(in) :: filepath    !> full path to file name
+  character(len=*), intent(in) :: fieldname   !> name of the field to write to the file
   type(fieldtype), intent(in) :: field_md     !> FMS field metadata
-  real, intent(inout) :: field(:)             !> Unrotated field array
+  character(len=*), intent(in) :: nc_mode     !> write or append
+  real, target, intent(inout) :: field(:)             !> Unrotated field array
   real, optional, intent(in) :: tstamp        !> Model timestamp
   integer, optional, intent(in) :: turns      !> Number of quarter-turns
+  logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
+
+  real, pointer, dimension(:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
 
   if (present(turns)) &
     call MOM_error(FATAL, "Rotation not supported for 0d fields.")
 
-  call write_field(io_unit, field_md, field, tstamp=tstamp)
+  data_tmp => field 
+  !call write_field(io_unit, field_md, field, tstamp=tstamp)
+  call write_field(trim(filepath), fieldname, data_tmp, trim(nc_mode), &
+                   leave_file_open=leave_file_open)
+  if (associated(data_tmp)) nullify(data_tmp)
 end subroutine rotated_write_field_real_1d
 
 
 !> Write the rotation of a 2d field to an FMS output file
-subroutine rotated_write_field_real_2d(io_unit, field_md, domain, field, &
-    tstamp, tile_count, default_data, turns)
-  integer, intent(in) :: io_unit              !> File I/O unit handle
+subroutine rotated_write_field_real_2d(filepath, fieldname, field_md, nc_mode, domain, field, &
+    tstamp, tile_count, default_data, turns, leave_file_open)
+  !integer, intent(in) :: io_unit              !> File I/O unit handle
+  character(len=*), intent(in) :: filepath    !> full path to file name
+  character(len=*), intent(in) :: fieldname   !> name of the field to write to the file
   type(fieldtype), intent(in) :: field_md     !> FMS field metadata
-  type(domain2D), intent(inout) :: domain     !> FMS MPP domain
-  real, intent(inout) :: field(:,:)           !> Unrotated field array
+  character(len=*), intent(in) :: nc_mode     !> write or append
+  !type(domain2D), intent(inout) :: domain     !> FMS MPP domain
+  type(MOM_domain_type) :: domain             !> MOM domain attribute with the mpp_domain decomposition
+  real, target, intent(inout) :: field(:,:)           !> Unrotated field array
   real, optional, intent(in) :: tstamp        !> Model timestamp
   integer, optional, intent(in) :: tile_count !> PEs per tile (default: 1)
   real, optional, intent(in) :: default_data  !> Default fill value
   integer, optional, intent(in) :: turns      !> Number of quarter-turns
+  logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
 
-  real, allocatable :: field_rot(:,:)
+  real, allocatable, target :: field_rot(:,:)
   integer :: qturns
+  real, pointer, dimension(:,:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
 
   qturns = 0
   if (present(turns)) &
     qturns = modulo(turns, 4)
 
   if (qturns == 0) then
-    call write_field(io_unit, field_md, domain, field, tstamp=tstamp, &
-        tile_count=tile_count, default_data=default_data)
+   ! call write_field(io_unit, field_md, domain, field, tstamp=tstamp, &
+   !     tile_count=tile_count, default_data=default_data)
+   data_tmp => field
   else
     call allocate_rotated_array(field, [1,1], qturns, field_rot)
     call rotate_array(field, qturns, field_rot)
-    call write_field(io_unit, field_md, domain, field_rot, tstamp=tstamp, &
-        tile_count=tile_count, default_data=default_data)
+    data_tmp => field_rot
+    !call write_field(io_unit, field_md, domain, field_rot, tstamp=tstamp, &
+    !    tile_count=tile_count, default_data=default_data)
     deallocate(field_rot)
   endif
+  call write_field(trim(filepath), fieldname, data_tmp, trim(nc_mode), domain, &
+                   leave_file_open=leave_file_open)
+  if (associated(data_tmp)) nullify(data_tmp)
 end subroutine rotated_write_field_real_2d
 
 
 !> Write the rotation of a 3d field to an FMS output file
-subroutine rotated_write_field_real_3d(io_unit, field_md, domain, field, &
-    tstamp, tile_count, default_data, turns)
-  integer, intent(in) :: io_unit              !> File I/O unit handle
+subroutine rotated_write_field_real_3d(filepath, fieldname, field_md, nc_mode, domain, field, &
+    tstamp, tile_count, default_data, turns, leave_file_open)
+  !integer, intent(in) :: io_unit              !> File I/O unit handle
+  character(len=*), intent(in) :: filepath    !> full path to file name
+  character(len=*), intent(in) :: fieldname   !> name of the field to write to the file
   type(fieldtype), intent(in) :: field_md     !> FMS field metadata
-  type(domain2D), intent(inout) :: domain     !> FMS MPP domain
-  real, intent(inout) :: field(:,:,:)         !> Unrotated field array
+  character(len=*), intent(in) :: nc_mode     !> write or append
+  !type(domain2D), intent(inout) :: domain     !> FMS MPP domain
+  type(MOM_domain_type) :: domain             !> MOM domain attribute with the mpp_domain decomposition
+  real, target, intent(inout) :: field(:,:,:)         !> Unrotated field array
   real, optional, intent(in) :: tstamp        !> Model timestamp
   integer, optional, intent(in) :: tile_count !> PEs per tile (default: 1)
   real, optional, intent(in) :: default_data  !> Default fill value
   integer, optional, intent(in) :: turns      !> Number of quarter-turns
+  logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
 
-  real, allocatable :: field_rot(:,:,:)
+  real, allocatable, target :: field_rot(:,:,:)
   integer :: qturns
+  real, pointer, dimension(:,:,:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
 
   qturns = 0
   if (present(turns)) &
     qturns = modulo(turns, 4)
 
   if (qturns == 0) then
-    call write_field(io_unit, field_md, domain, field, tstamp=tstamp, &
-        tile_count=tile_count, default_data=default_data)
+    !call write_field(io_unit, field_md, domain, field, tstamp=tstamp, &
+    !    tile_count=tile_count, default_data=default_data)
+   data_tmp => field
   else
     call allocate_rotated_array(field, [1,1,1], qturns, field_rot)
     call rotate_array(field, qturns, field_rot)
-    call write_field(io_unit, field_md, domain, field_rot, tstamp=tstamp, &
-        tile_count=tile_count, default_data=default_data)
+    data_tmp => field_rot
+    !call write_field(io_unit, field_md, domain, field_rot, tstamp=tstamp, &
+    !    tile_count=tile_count, default_data=default_data)
     deallocate(field_rot)
   endif
+  call write_field(trim(filepath), fieldname, data_tmp, trim(nc_mode), domain, &
+                     leave_file_open=leave_file_open)
+  if (associated(data_tmp)) nullify(data_tmp)
 end subroutine rotated_write_field_real_3d
 
 
 !> Write the rotation of a 4d field to an FMS output file
-subroutine rotated_write_field_real_4d(io_unit, field_md, domain, field, &
-    tstamp, tile_count, default_data, turns)
-  integer, intent(in) :: io_unit              !> File I/O unit handle
+subroutine rotated_write_field_real_4d(filepath, fieldname, field_md, nc_mode, domain, field, &
+    tstamp, tile_count, default_data, turns, leave_file_open)
+  !integer, intent(in) :: io_unit              !> File I/O unit handle
+  character(len=*), intent(in) :: filepath    !> full path to file name
+  character(len=*), intent(in) :: fieldname   !> name of the field to write to the file
   type(fieldtype), intent(in) :: field_md     !> FMS field metadata
-  type(domain2D), intent(inout) :: domain     !> FMS MPP domain
-  real, intent(inout) :: field(:,:,:,:)       !> Unrotated field array
+  character(len=*), intent(in) :: nc_mode     !> write or append
+  !type(domain2D), intent(inout) :: domain     !> FMS MPP domain
+  type(MOM_domain_type) :: domain             !> MOM domain attribute with the mpp_domain decomposition
+  real, target, intent(inout) :: field(:,:,:,:)       !> Unrotated field array
   real, optional, intent(in) :: tstamp        !> Model timestamp
   integer, optional, intent(in) :: tile_count !> PEs per tile (default: 1)
   real, optional, intent(in) :: default_data  !> Default fill value
   integer, optional, intent(in) :: turns      !> Number of quarter-turns
-
-  real, allocatable :: field_rot(:,:,:,:)
+  logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
+  
+  real, allocatable, target :: field_rot(:,:,:,:)
   integer :: qturns
+  real, pointer, dimension(:,:,:,:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
 
   qturns = 0
   if (present(turns)) &
     qturns = modulo(turns, 4)
 
   if (qturns == 0) then
-    call write_field(io_unit, field_md, domain, field, tstamp=tstamp, &
-        tile_count=tile_count, default_data=default_data)
+    !call write_field(io_unit, field_md, domain, field, tstamp=tstamp, &
+    !    tile_count=tile_count, default_data=default_data)
+    data_tmp => field
   else
     call allocate_rotated_array(field, [1,1,1,1], qturns, field_rot)
     call rotate_array(field, qturns, field_rot)
-    call write_field(io_unit, field_md, domain, field_rot, tstamp=tstamp, &
-        tile_count=tile_count, default_data=default_data)
+    data_tmp => field_rot
+    !call write_field(io_unit, field_md, domain, field_rot, tstamp=tstamp, &
+    !    tile_count=tile_count, default_data=default_data)
     deallocate(field_rot)
   endif
+  call write_field(trim(filepath), fieldname, data_tmp, trim(nc_mode), domain, &
+                     leave_file_open=leave_file_open)
+  if (associated(data_tmp)) nullify(data_tmp)
 end subroutine rotated_write_field_real_4d
 
 
