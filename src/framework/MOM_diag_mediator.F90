@@ -334,6 +334,9 @@ type, public :: diag_ctrl
   !> Number of checksum-only diagnostics
   integer :: num_chksum_diags
 
+  real, dimension(:,:,:), allocatable :: h_begin !< Layer thicknesses at the beginning of the timestep used
+                                                 !! for remapping of extensive variables
+
 end type diag_ctrl
 
 !>@{ CPU clocks
@@ -456,6 +459,10 @@ subroutine set_axes_info(G, GV, US, param_file, diag_cs, set_vertical)
   do i=1, diag_cs%num_diag_coords
     ! For each possible diagnostic coordinate
     call diag_remap_configure_axes(diag_cs%diag_remap_cs(i), GV, US, param_file)
+
+    ! Allocate these arrays since the size of the diagnostic array is now known
+    allocate(diag_cs%diag_remap_cs(i)%h(G%isd:G%ied,G%jsd:G%jed, diag_cs%diag_remap_cs(i)%nz))
+    allocate(diag_cs%diag_remap_cs(i)%h_extensive(G%isd:G%ied,G%jsd:G%jed, diag_cs%diag_remap_cs(i)%nz))
 
     ! This vertical coordinate has been configured so can be used.
     if (diag_remap_axes_configured(diag_cs%diag_remap_cs(i))) then
@@ -1206,6 +1213,7 @@ subroutine post_data_0d(diag_field_id, field, diag_cs, is_static)
   logical, optional, intent(in) :: is_static !< If true, this is a static field that is always offered.
 
   ! Local variables
+  real :: locfield
   logical :: used, is_stat
   type(diag_type), pointer :: diag => null()
 
@@ -1217,13 +1225,18 @@ subroutine post_data_0d(diag_field_id, field, diag_cs, is_static)
   call assert(diag_field_id < diag_cs%next_free_diag_id, &
               'post_data_0d: Unregistered diagnostic id')
   diag => diag_cs%diags(diag_field_id)
+
   do while (associated(diag))
+    locfield = field
+    if (diag%conversion_factor /= 0.) &
+      locfield = locfield * diag%conversion_factor
+
     if (diag_cs%diag_as_chksum) then
-      call chksum0(field, diag%debug_str, logunit=diag_cs%chksum_iounit)
+      call chksum0(locfield, diag%debug_str, logunit=diag_cs%chksum_iounit)
     else if (is_stat) then
-      used = send_data(diag%fms_diag_id, field)
+      used = send_data(diag%fms_diag_id, locfield)
     elseif (diag_cs%ave_enabled) then
-      used = send_data(diag%fms_diag_id, field, diag_cs%time_end)
+      used = send_data(diag%fms_diag_id, locfield, diag_cs%time_end)
     endif
     diag => diag%next
   enddo
@@ -1476,13 +1489,15 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
   logical :: staggered_in_x, staggered_in_y
   real, dimension(:,:,:), pointer :: h_diag => NULL()
 
+  if (id_clock_diag_mediator>0) call cpu_clock_begin(id_clock_diag_mediator)
+
+  ! For intensive variables only, we can choose to use a different diagnostic grid
+  ! to map to
   if (present(alt_h)) then
     h_diag => alt_h
   else
     h_diag => diag_cs%h
   endif
-
-  if (id_clock_diag_mediator>0) call cpu_clock_begin(id_clock_diag_mediator)
 
   ! Iterate over list of diag 'variants', e.g. CMOR aliases, different vertical
   ! grids, and post each.
@@ -1503,10 +1518,11 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
 
       if (id_clock_diag_remap>0) call cpu_clock_begin(id_clock_diag_remap)
       allocate(remapped_field(size(field,1), size(field,2), diag%axes%nz))
-      call vertically_reintegrate_diag_field( &
-              diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), &
-              diag_cs%G, h_diag, staggered_in_x, staggered_in_y, &
-              diag%axes%mask3d, diag_cs%missing_value, field, remapped_field)
+      call vertically_reintegrate_diag_field(                                    &
+        diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), diag_cs%G,  &
+        diag_cs%h_begin,                                                         &
+        diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number)%h_extensive, &
+        staggered_in_x, staggered_in_y, diag%axes%mask3d, field, remapped_field)
       if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
       if (associated(diag%axes%mask3d)) then
         ! Since 3d masks do not vary in the vertical, just use as much as is
@@ -1529,7 +1545,7 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
       allocate(remapped_field(size(field,1), size(field,2), diag%axes%nz))
       call diag_remap_do_remap(diag_cs%diag_remap_cs(diag%axes%vertical_coordinate_number), &
               diag_cs%G, diag_cs%GV, h_diag, staggered_in_x, staggered_in_y, &
-              diag%axes%mask3d, diag_cs%missing_value, field, remapped_field)
+              diag%axes%mask3d, field, remapped_field)
       if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
       if (associated(diag%axes%mask3d)) then
         ! Since 3d masks do not vary in the vertical, just use as much as is
@@ -1553,7 +1569,7 @@ subroutine post_data_3d(diag_field_id, field, diag_cs, is_static, mask, alt_h)
       call vertically_interpolate_diag_field(diag_cs%diag_remap_cs( &
               diag%axes%vertical_coordinate_number), &
               diag_cs%G, h_diag, staggered_in_x, staggered_in_y, &
-              diag%axes%mask3d, diag_cs%missing_value, field, remapped_field)
+              diag%axes%mask3d, field, remapped_field)
       if (id_clock_diag_remap>0) call cpu_clock_end(id_clock_diag_remap)
       if (associated(diag%axes%mask3d)) then
         ! Since 3d masks do not vary in the vertical, just use as much as is
@@ -1770,7 +1786,7 @@ subroutine post_xy_average(diag_cs, diag, field)
     call horizontally_average_diag_field(diag_cs%G, diag_cs%GV, diag_cs%h, &
                                          staggered_in_x, staggered_in_y, &
                                          diag%axes%is_layer, diag%v_extensive, &
-                                         diag_cs%missing_value, field, &
+                                         field, &
                                          averaged_field, averaged_mask)
   else
     nz = size(field, 3)
@@ -1789,7 +1805,7 @@ subroutine post_xy_average(diag_cs, diag, field)
                                          diag_cs%diag_remap_cs(coord)%h, &
                                          staggered_in_x, staggered_in_y, &
                                          diag%axes%is_layer, diag%v_extensive, &
-                                         diag_cs%missing_value, field, &
+                                         field, &
                                          averaged_field, averaged_mask)
   endif
 
@@ -3065,6 +3081,7 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
   diag_cs%S => null()
   diag_cs%eqn_of_state => null()
 
+  allocate(diag_cs%h_begin(G%isd:G%ied,G%jsd:G%jed,nz))
 #if defined(DEBUG) || defined(__DO_SAFETY_CHECKS__)
   allocate(diag_cs%h_old(G%isd:G%ied,G%jsd:G%jed,nz))
   diag_cs%h_old(:,:,:) = 0.0
@@ -3198,7 +3215,7 @@ end subroutine
 !> Build/update vertical grids for diagnostic remapping.
 !! \note The target grids need to be updated whenever sea surface
 !! height changes.
-subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S)
+subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S, update_intensive, update_extensive )
   type(diag_ctrl),        intent(inout) :: diag_cs      !< Diagnostics control structure
   real, target, optional, intent(in   ) :: alt_h(:,:,:) !< Used if remapped grids should be something other than
                                                         !! the current thicknesses [H ~> m or kg m-2]
@@ -3206,11 +3223,17 @@ subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S)
                                                         !! the current temperatures
   real, target, optional, intent(in   ) :: alt_S(:,:,:) !< Used if remapped grids should be something other than
                                                         !! the current salinity
+  logical, optional,      intent(in   ) :: update_intensive !< If true (default), update the grids used for
+                                                            !! intensive diagnostics
+  logical, optional,      intent(in   ) :: update_extensive !< If true (not default), update the grids used for
+                                                            !! intensive diagnostics
   ! Local variables
   integer :: i
   real, dimension(:,:,:), pointer :: h_diag => NULL() ! The layer thickneses for diagnostics [H ~> m or kg m-2]
   real, dimension(:,:,:), pointer :: T_diag => NULL(), S_diag => NULL()
+  logical :: update_intensive_local, update_extensive_local
 
+  ! Set values based on optional input arguments
   if (present(alt_h)) then
     h_diag => alt_h
   else
@@ -3229,6 +3252,15 @@ subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S)
     S_diag => diag_CS%S
   endif
 
+  ! Defaults here are based on wanting to update intensive quantities frequently as soon as the model state changes.
+  ! Conversely, for extensive quantities, in an effort to close budgets and to be consistent with the total time
+  ! tendency, we construct the diagnostic grid at the beginning of the baroclinic timestep and remap all extensive
+  ! quantities to the same grid
+  update_intensive_local = .true.
+  if (present(update_intensive)) update_intensive_local = update_intensive
+  update_extensive_local = .false.
+  if (present(update_extensive)) update_extensive_local = update_extensive
+
   if (id_clock_diag_grid_updates>0) call cpu_clock_begin(id_clock_diag_grid_updates)
 
   if (diag_cs%diag_grid_overridden) then
@@ -3236,10 +3268,19 @@ subroutine diag_update_remap_grids(diag_cs, alt_h, alt_T, alt_S)
                            "diagnostic structure have been overridden")
   endif
 
-  do i=1, diag_cs%num_diag_coords
-    call diag_remap_update(diag_cs%diag_remap_cs(i), diag_cs%G, diag_cs%GV, diag_cs%US, &
-                           h_diag, T_diag, S_diag, diag_cs%eqn_of_state)
-  enddo
+  if (update_intensive_local) then
+    do i=1, diag_cs%num_diag_coords
+      call diag_remap_update(diag_cs%diag_remap_cs(i), diag_cs%G, diag_cs%GV, diag_cs%US, h_diag, T_diag, S_diag, &
+                             diag_cs%eqn_of_state, diag_cs%diag_remap_cs(i)%h)
+    enddo
+  endif
+  if (update_extensive_local) then
+    diag_cs%h_begin(:,:,:) = diag_cs%h(:,:,:)
+    do i=1, diag_cs%num_diag_coords
+      call diag_remap_update(diag_cs%diag_remap_cs(i), diag_cs%G, diag_cs%GV, diag_cs%US, h_diag, T_diag, S_diag, &
+                             diag_cs%eqn_of_state, diag_cs%diag_remap_cs(i)%h_extensive)
+    enddo
+  endif
 
 #if defined(DEBUG) || defined(__DO_SAFETY_CHECKS__)
   ! Keep a copy of H - used to check whether grids are up-to-date

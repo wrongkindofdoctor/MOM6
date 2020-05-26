@@ -45,10 +45,8 @@ use MOM_io, only: fms2_register_restart_field => register_restart_field, &
                   file_exists, &
                   FmsNetcdfDomainFile_t, &
                   unlimited
-#include <fms_platform.h>
 use mpp_io_mod,      only :  mpp_attribute_exist, mpp_get_atts
-use mpp_mod,         only :  mpp_pe
-
+#include <fms_platform.h>
 implicit none ; private
 
 public restart_init, restart_end, restore_state, register_restart_field
@@ -1135,6 +1133,27 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV)
             call register_variable_attribute(fileObjWrite, trim(axis_data_CS%axis(i)%name), &
                                              'positive',trim(axis_data_CS%axis(i)%positive))
         endif
+=======
+    !Prepare the checksum of the restart fields to be written to restart files
+    if (modulo(turns, 2) /= 0) then
+      call get_checksum_loop_ranges(G, pos, jsL, jeL, isL, ieL)
+    else
+      call get_checksum_loop_ranges(G, pos, isL, ieL, jsL, jeL)
+    endif
+    do m=start_var,next_var-1
+      if (associated(CS%var_ptr3d(m)%p)) then
+        check_val(m-start_var+1,1) = &
+            mpp_chksum(CS%var_ptr3d(m)%p(isL:ieL,jsL:jeL,:), turns=-turns)
+      elseif (associated(CS%var_ptr2d(m)%p)) then
+        check_val(m-start_var+1,1) = &
+            mpp_chksum(CS%var_ptr2d(m)%p(isL:ieL,jsL:jeL), turns=-turns)
+      elseif (associated(CS%var_ptr4d(m)%p)) then
+        check_val(m-start_var+1,1) = &
+            mpp_chksum(CS%var_ptr4d(m)%p(isL:ieL,jsL:jeL,:,:), turns=-turns)
+      elseif (associated(CS%var_ptr1d(m)%p)) then
+        check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr1d(m)%p)
+      elseif (associated(CS%var_ptr0d(m)%p)) then
+        check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr0d(m)%p,pelist=(/mpp_pe()/))
       endif
     enddo
 
@@ -1338,26 +1357,6 @@ subroutine write_initial_conditions(directory, filename, CS, G, time, GV)
         endif
 
         call MOM_register_diagnostic_axis(fileObjWrite, trim(dim_names(i)), dim_lengths(i))
-=======
-    do m=start_var,next_var-1
-      if (associated(CS%var_ptr3d(m)%p)) then
-        call write_field(unit,fields(m-start_var+1), G%Domain%mpp_domain, &
-                         CS%var_ptr3d(m)%p, restart_time, turns=-turns)
-      elseif (associated(CS%var_ptr2d(m)%p)) then
-        call write_field(unit,fields(m-start_var+1), G%Domain%mpp_domain, &
-                         CS%var_ptr2d(m)%p, restart_time, turns=-turns)
-      elseif (associated(CS%var_ptr4d(m)%p)) then
-        call write_field(unit,fields(m-start_var+1), G%Domain%mpp_domain, &
-                         CS%var_ptr4d(m)%p, restart_time, turns=-turns)
-      elseif (associated(CS%var_ptr1d(m)%p)) then
-        call write_field(unit, fields(m-start_var+1), CS%var_ptr1d(m)%p, &
-                         restart_time)
-      elseif (associated(CS%var_ptr0d(m)%p)) then
-        call write_field(unit, fields(m-start_var+1), CS%var_ptr0d(m)%p, &
-                         restart_time)
->>>>>>> 22215cb0b... Internal field index rotation
-      endif
-    enddo
   enddo
 
   ! register and write the coordinate variables (axes) to the file

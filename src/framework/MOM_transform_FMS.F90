@@ -278,10 +278,6 @@ subroutine rotated_write_field_real_3d(filepath, fieldname, field_md, nc_mode, d
   !type(domain2D), intent(inout) :: domain     !> FMS MPP domain
   type(MOM_domain_type) :: domain             !> MOM domain attribute with the mpp_domain decomposition
   real, target, intent(inout) :: field(:,:,:)         !> Unrotated field array
-  real, optional, intent(in) :: tstamp        !> Model timestamp
-  integer, optional, intent(in) :: tile_count !> PEs per tile (default: 1)
-  real, optional, intent(in) :: default_data  !> Default fill value
-  integer, optional, intent(in) :: turns      !> Number of quarter-turns
   logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
 
   real, allocatable, target :: field_rot(:,:,:)

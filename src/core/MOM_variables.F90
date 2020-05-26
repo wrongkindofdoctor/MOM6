@@ -42,27 +42,27 @@ type, public :: surface
   real, allocatable, dimension(:,:) :: &
     SST, &         !< The sea surface temperature [degC].
     SSS, &         !< The sea surface salinity [ppt ~> psu or gSalt/kg].
-    sfc_density, & !< The mixed layer density [kg m-3].
-    Hml, &         !< The mixed layer depth [m].
-    u, &           !< The mixed layer zonal velocity [m s-1].
-    v, &           !< The mixed layer meridional velocity [m s-1].
-    sea_lev, &     !< The sea level [m].  If a reduced surface gravity is
+    sfc_density, & !< The mixed layer density [R ~> kg m-3].
+    Hml, &         !< The mixed layer depth [Z ~> m].
+    u, &           !< The mixed layer zonal velocity [L T-1 ~> m s-1].
+    v, &           !< The mixed layer meridional velocity [L T-1 ~> m s-1].
+    sea_lev, &     !< The sea level [Z ~> m].  If a reduced surface gravity is
                    !! used, that is compensated for in sea_lev.
     frazil, &      !< The energy needed to heat the ocean column to the freezing point during
-                   !! the call to step_MOM [J m-2].
-    melt_potential, & !< Instantaneous amount of heat that can be used to melt sea ice [J m-2].
+                   !! the call to step_MOM [Q R Z ~> J m-2].
+    melt_potential, & !< Instantaneous amount of heat that can be used to melt sea ice [Q R Z ~> J m-2].
                       !! This is computed w.r.t. surface freezing temperature.
-    ocean_mass, &  !< The total mass of the ocean [kg m-2].
-    ocean_heat, &  !< The total heat content of the ocean in [degC kg m-2].
-    ocean_salt, &  !< The total salt content of the ocean in [kgSalt m-2].
-    taux_shelf, &  !< The zonal stresses on the ocean under shelves [Pa].
-    tauy_shelf, &  !< The meridional stresses on the ocean under shelves [Pa].
+    ocean_mass, &  !< The total mass of the ocean [R Z ~> kg m-2].
+    ocean_heat, &  !< The total heat content of the ocean in [degC R Z ~> degC kg m-2].
+    ocean_salt, &  !< The total salt content of the ocean in [kgSalt kg-1 R Z ~> kgSalt m-2].
+    taux_shelf, &  !< The zonal stresses on the ocean under shelves [R L Z T-2 ~> Pa].
+    tauy_shelf, &  !< The meridional stresses on the ocean under shelves [R L Z T-2 ~> Pa].
     TempxPmE, &    !< The net inflow of water into the ocean times the temperature at which this
-                   !! inflow occurs during the call to step_MOM [degC kg m-2].
-    salt_deficit, & !< The salt needed to maintain the ocean column at a minimum
-                   !! salinity of 0.01 PSU over the call to step_MOM [kgSalt m-2].
+                   !! inflow occurs during the call to step_MOM [degC R Z ~> degC kg m-2].
+    salt_deficit, & !< The salt needed to maintain the ocean column above a minimum
+                   !! salinity over the call to step_MOM [kgSalt kg-1 R Z ~> kgSalt m-2].
     internal_heat  !< Any internal or geothermal heat sources that are applied to the ocean
-                   !! integrated over the call to step_MOM [degC kg m-2].
+                   !! integrated over the call to step_MOM [degC R Z ~> degC kg m-2].
   logical :: T_is_conT = .false. !< If true, the temperature variable SST is actually the
                    !! conservative temperature in [degC].
   logical :: S_is_absS = .false. !< If true, the salinity variable SSS is actually the
@@ -81,9 +81,11 @@ type, public :: thermo_var_ptrs
   ! If allocated, the following variables have nz layers.
   real, pointer :: T(:,:,:) => NULL() !< Potential temperature [degC].
   real, pointer :: S(:,:,:) => NULL() !< Salnity [PSU] or [gSalt/kg], generically [ppt].
+  real, pointer :: p_surf(:,:) => NULL() !< Ocean surface pressure used in equation of state
+                         !! calculations [R L2 T-2 ~> Pa]
   type(EOS_type), pointer :: eqn_of_state => NULL() !< Type that indicates the
                          !! equation of state to use.
-  real :: P_Ref          !<   The coordinate-density reference pressure [Pa].
+  real :: P_Ref          !<   The coordinate-density reference pressure [R L2 T-2 ~> Pa].
                          !! This is the pressure used to calculate Rml from
                          !! T and S when eqn_of_state is associated.
   real :: C_p            !<   The heat capacity of seawater [Q degC-1 ~> J degC-1 kg-1].
@@ -227,7 +229,7 @@ type, public :: vertvisc_type
   real, pointer, dimension(:,:) :: nkml_visc_v => NULL()
                 !< The number of layers in the viscous surface mixed layer at v-points [nondim].
   real, pointer, dimension(:,:) :: &
-    MLD => NULL()      !< Instantaneous active mixing layer depth in unscaled MKS units [m].
+    MLD => NULL()      !< Instantaneous active mixing layer depth [Z ~> m].
   real, pointer, dimension(:,:,:) :: &
     Ray_u => NULL(), & !< The Rayleigh drag velocity to be applied to each layer at u-points [Z T-1 ~> m s-1].
     Ray_v => NULL()    !< The Rayleigh drag velocity to be applied to each layer at v-points [Z T-1 ~> m s-1].

@@ -250,10 +250,10 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   type(time_type),                   intent(in)    :: Time_local   !< model time at end of time step
   real,                              intent(in)    :: dt           !< time step [T ~> s]
   type(mech_forcing),                intent(in)    :: forces       !< A structure with the driving mechanical forces
-  real, dimension(:,:),              pointer       :: p_surf_begin !< surf pressure at start of this dynamic
-                                                                   !! time step [Pa]
-  real, dimension(:,:),              pointer       :: p_surf_end   !< surf pressure at end   of this dynamic
-                                                                   !! time step [Pa]
+  real, dimension(:,:),              pointer       :: p_surf_begin !< surf pressure at the start of this dynamic
+                                                                   !! time step [R L2 T-2 ~> Pa]
+  real, dimension(:,:),              pointer       :: p_surf_end   !< surf pressure at the end of this dynamic
+                                                                   !! time step [R L2 T-2 ~> Pa]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), &
                              target, intent(inout) :: uh           !< zonal volume/mass transport
                                                                    !! [H L2 T-1 ~> m3 s-1 or kg s-1]
@@ -306,7 +306,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
     ! u_old_rad_OBC and v_old_rad_OBC are the starting velocities, which are
     ! saved for use in the Flather open boundary condition code [L T-1 ~> m s-1].
 
-  real :: Pa_to_eta ! A factor that converts pressures to the units of eta.
+  real :: pres_to_eta ! A factor that converts pressures to the units of eta
+                      ! [H T2 R-1 L-2 ~> m Pa-1 or kg m-2 Pa-1]
   real, pointer, dimension(:,:) :: &
     p_surf => NULL(), eta_PF_start => NULL(), &
     taux_bot => NULL(), tauy_bot => NULL(), &
@@ -387,10 +388,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   !--- begin set up for group halo pass
 
   cont_stencil = continuity_stencil(CS%continuity_CSp)
-  !### Apart from circle_OBCs halo for eta could be 1, but halo>=3 is required
-  !### to match circle_OBCs solutions. Why?
   call cpu_clock_begin(id_clock_pass)
-  call create_group_pass(CS%pass_eta, eta, G%Domain) !### , halo=1)
+  call create_group_pass(CS%pass_eta, eta, G%Domain, halo=1)
   call create_group_pass(CS%pass_visc_rem, CS%visc_rem_u, CS%visc_rem_v, G%Domain, &
                          To_All+SCALAR_PAIR, CGRID_NE, halo=max(1,cont_stencil))
   call create_group_pass(CS%pass_uvp, up, vp, G%Domain, halo=max(1,cont_stencil))
@@ -413,11 +412,10 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   call PressureForce(h, tv, CS%PFu, CS%PFv, G, GV, US, CS%PressureForce_CSp, &
                      CS%ALE_CSp, p_surf, CS%pbce, CS%eta_PF)
   if (dyn_p_surf) then
-    Pa_to_eta = 1.0 / GV%H_to_Pa
+    pres_to_eta = 1.0 / (GV%g_Earth * GV%H_to_RZ)
     !$OMP parallel do default(shared)
     do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-      eta_PF_start(i,j) = CS%eta_PF(i,j) - Pa_to_eta * &
-                          (p_surf_begin(i,j) - p_surf_end(i,j))
+      eta_PF_start(i,j) = CS%eta_PF(i,j) - pres_to_eta * (p_surf_begin(i,j) - p_surf_end(i,j))
     enddo ; enddo
   endif
   call cpu_clock_end(id_clock_pres)
@@ -934,6 +932,9 @@ subroutine register_restarts_dyn_split_RK2(HI, GV, param_file, CS, restart_CS, u
   vd(1) = var_desc("u2","m s-1","Auxiliary Zonal velocity",'u','L')
   vd(2) = var_desc("v2","m s-1","Auxiliary Meridional velocity",'v','L')
   call register_restart_pair(CS%u_av, CS%v_av, vd(1), vd(2), .false., restart_CS)
+
+  vd(1) = var_desc("h2",thickness_units,"Auxiliary Layer Thickness",'h','L')
+  call register_restart_field(CS%h_av, vd(1), .false., restart_CS)
 
   vd(1) = var_desc("uh",flux_units,"Zonal thickness flux",'u','L')
   vd(2) = var_desc("vh",flux_units,"Meridional thickness flux",'v','L')
