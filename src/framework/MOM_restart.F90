@@ -2,28 +2,27 @@
 module MOM_restart
 
 ! This file is part of MOM6. See LICENSE.md for the license.
-
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, NOTE, is_root_pe
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
 use MOM_string_functions, only : lowercase, append_substring
 use MOM_grid, only : ocean_grid_type
 use MOM_io, only : create_file, fieldtype, file_exists, open_file, close_file
-use MOM_io, only : MOM_read_data, read_data, get_filename_appendix
-use MOM_io, only : get_file_info, get_file_atts, get_file_fields, get_file_times
+use MOM_io, only : MOM_read_data, read_data !, get_filename_appendix unavailable in fms2_io
 use MOM_io, only : vardesc, var_desc, query_vardesc, modify_vardesc
 use MOM_io, only : CENTER, CORNER, NORTH_FACE, EAST_FACE
 use MOM_io, only : get_var_dimension_features
 use MOM_io, only : get_time_units
 use MOM_io, only : get_variable_byte_size
 use MOM_io, only : axis_data_type
-use MOM_io, only : MOM_get_diagnostic_axis_data
+use MOM_io, only : MOM_get_diagnostic_axis_data, convert_checksum_to_string
 use MOM_time_manager, only : time_type, time_type_to_real, real_to_time
 use MOM_time_manager, only : days_in_month, get_date, set_date
 use MOM_transform_FMS, only : mpp_chksum => rotated_mpp_chksum
 use MOM_transform_FMS, only : write_field => rotated_write_field
 use MOM_verticalGrid, only : verticalGrid_type
-use mpp_mod,         only: mpp_chksum, mpp_pe, mpp_max
+use mpp_mod,         only: mpp_pe, mpp_max
 use mpp_domains_mod, only: mpp_define_io_domain, mpp_get_domain_npes, mpp_get_io_domain
+use mpp_io_mod,      only :  mpp_attribute_exist, mpp_get_atts
 ! New FMS-IO interfaces
 use MOM_io, only: fms2_register_restart_field => register_restart_field, &
                   register_field, &
@@ -45,8 +44,6 @@ use MOM_io, only: fms2_register_restart_field => register_restart_field, &
                   file_exists, &
                   FmsNetcdfDomainFile_t, &
                   unlimited
-use mpp_io_mod,      only :  mpp_attribute_exist, mpp_get_atts
-#include <fms_platform.h>
 implicit none ; private
 
 public restart_init, restart_end, restore_state, register_restart_field
@@ -159,6 +156,7 @@ interface query_initialized
   module procedure query_initialized_3d, query_initialized_3d_name
   module procedure query_initialized_4d, query_initialized_4d_name
 end interface
+#include <fms_platform.h>
 
 contains
 !!> Register a restart field as obsolete
@@ -337,11 +335,19 @@ subroutine register_restart_pair_ptr2d(a_ptr, b_ptr, a_desc, b_desc, &
   type(MOM_restart_CS), pointer :: CS   !< MOM restart control structure
 
   if (modulo(CS%turns, 2) /= 0) then
-    call register_restart_field(b_ptr, a_desc, mandatory, CS)
-    call register_restart_field(a_ptr, b_desc, mandatory, CS)
+    call register_restart_field(b_ptr, a_desc%name, mandatory, CS, longname=a_desc%longname, &
+                                units=a_desc%units, hor_grid=a_desc%hor_grid, z_grid=a_desc%z_grid, &
+                                t_grid=a_desc%t_grid)
+    call register_restart_field(a_ptr, b_desc%name, mandatory, CS, longname=b_desc%longname, &
+                                units=b_desc%units, hor_grid=b_desc%hor_grid, z_grid=b_desc%z_grid, &
+                                t_grid=b_desc%t_grid)
   else
-    call register_restart_field(a_ptr, a_desc, mandatory, CS)
-    call register_restart_field(b_ptr, b_desc, mandatory, CS)
+    call register_restart_field(a_ptr, a_desc%name, mandatory, CS, longname=a_desc%longname, &
+                                units=a_desc%units, hor_grid=a_desc%hor_grid, z_grid=a_desc%z_grid, &
+                                t_grid=a_desc%t_grid)
+    call register_restart_field(b_ptr, b_desc%name, mandatory, CS, longname=b_desc%longname, &
+                                units=b_desc%units, hor_grid=b_desc%hor_grid, z_grid=b_desc%z_grid, &
+                                t_grid=b_desc%t_grid)
   endif
 end subroutine register_restart_pair_ptr2d
 
@@ -357,11 +363,19 @@ subroutine register_restart_pair_ptr3d(a_ptr, b_ptr, a_desc, b_desc, &
   type(MOM_restart_CS), pointer :: CS   !< MOM restart control structure
 
   if (modulo(CS%turns, 2) /= 0) then
-    call register_restart_field(b_ptr, a_desc, mandatory, CS)
-    call register_restart_field(a_ptr, b_desc, mandatory, CS)
+    call register_restart_field(b_ptr, a_desc%name, mandatory, CS, longname=a_desc%longname, &
+                                units=a_desc%units, hor_grid=a_desc%hor_grid, z_grid=a_desc%z_grid, &
+                                t_grid=a_desc%t_grid)
+    call register_restart_field(a_ptr, b_desc%name, mandatory, CS, longname=b_desc%longname, &
+                                units=b_desc%units, hor_grid=b_desc%hor_grid, z_grid=b_desc%z_grid, &
+                                t_grid=b_desc%t_grid)
   else
-    call register_restart_field(a_ptr, a_desc, mandatory, CS)
-    call register_restart_field(b_ptr, b_desc, mandatory, CS)
+    call register_restart_field(a_ptr, a_desc%name, mandatory, CS, longname=a_desc%longname, &
+                                units=a_desc%units, hor_grid=a_desc%hor_grid, z_grid=a_desc%z_grid, &
+                                t_grid=a_desc%t_grid)
+    call register_restart_field(b_ptr, b_desc%name, mandatory, CS, longname=b_desc%longname, &
+                                units=b_desc%units, hor_grid=b_desc%hor_grid, z_grid=b_desc%z_grid, &
+                                t_grid=b_desc%t_grid)
   endif
 end subroutine register_restart_pair_ptr3d
 
@@ -377,11 +391,19 @@ subroutine register_restart_pair_ptr4d(a_ptr, b_ptr, a_desc, b_desc, &
   type(MOM_restart_CS), pointer :: CS   !< MOM restart control structure
 
   if (modulo(CS%turns, 2) /= 0) then
-    call register_restart_field(b_ptr, a_desc, mandatory, CS)
-    call register_restart_field(a_ptr, b_desc, mandatory, CS)
+    call register_restart_field(b_ptr, a_desc%name, mandatory, CS, longname=a_desc%longname, &
+                                units=a_desc%units, hor_grid=a_desc%hor_grid, z_grid=a_desc%z_grid, &
+                                t_grid=a_desc%t_grid)
+    call register_restart_field(a_ptr, b_desc%name, mandatory, CS, longname=b_desc%longname, &
+                                units=b_desc%units, hor_grid=b_desc%hor_grid, z_grid=b_desc%z_grid, &
+                                t_grid=b_desc%t_grid)
   else
-    call register_restart_field(a_ptr, a_desc, mandatory, CS)
-    call register_restart_field(b_ptr, b_desc, mandatory, CS)
+    call register_restart_field(a_ptr, a_desc%name, mandatory, CS, longname=a_desc%longname, &
+                                units=a_desc%units, hor_grid=a_desc%hor_grid, z_grid=a_desc%z_grid, &
+                                t_grid=a_desc%t_grid)
+    call register_restart_field(b_ptr, b_desc%name, mandatory, CS, longname=b_desc%longname, &
+                                units=b_desc%units, hor_grid=b_desc%hor_grid, z_grid=b_desc%z_grid, &
+                                t_grid=b_desc%t_grid)
   endif
 end subroutine register_restart_pair_ptr4d
 
@@ -930,7 +952,7 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV)
   integer :: start_var, next_var        ! The starting variables of the
                                         ! current and next files.
   integer :: unit                       ! The mpp unit of the open file.
-  integer :: m, nz, i, k, num_files, pos
+  integer :: m, nz, i, k, num_files
   integer :: seconds, days, year, month, hour, minute
   character(len=8) :: hor_grid, z_grid, t_grid ! Variable grid info.
   character(len=64) :: var_name         ! A variable's name.
@@ -1133,13 +1155,38 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV)
             call register_variable_attribute(fileObjWrite, trim(axis_data_CS%axis(i)%name), &
                                              'positive',trim(axis_data_CS%axis(i)%positive))
         endif
-=======
+      endif
+    enddo
+
+    next_var = m
+
+    do m=start_var,next_var-1
+      vars(m-start_var+1) = CS%restart_field(m)%vars
+    enddo
+    call query_vardesc(vars(1), t_grid=t_grid, hor_grid=hor_grid, caller="save_restart")
+    t_grid = adjustl(t_grid)
+    if (t_grid(1:1) /= 'p') &
+      call modify_vardesc(vars(1), t_grid='s', caller="save_restart")
+    select case (hor_grid)
+      case ('q') ; pos = CORNER
+      case ('h') ; pos = CENTER
+      case ('u') ; pos = EAST_FACE
+      case ('v') ; pos = NORTH_FACE
+      case ('Bu') ; pos = CORNER
+      case ('T')  ; pos = CENTER
+      case ('Cu') ; pos = EAST_FACE
+      case ('Cv') ; pos = NORTH_FACE
+      case ('1') ; pos = 0
+      case default ; pos = 0
+    end select
+
     !Prepare the checksum of the restart fields to be written to restart files
     if (modulo(turns, 2) /= 0) then
       call get_checksum_loop_ranges(G, pos, jsL, jeL, isL, ieL)
     else
       call get_checksum_loop_ranges(G, pos, isL, ieL, jsL, jeL)
     endif
+
     do m=start_var,next_var-1
       if (associated(CS%var_ptr3d(m)%p)) then
         check_val(m-start_var+1,1) = &
@@ -1156,8 +1203,6 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV)
         check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr0d(m)%p,pelist=(/mpp_pe()/))
       endif
     enddo
-
-    next_var = m
 
     do m=start_var,next_var-1
       if (.not.(variable_exists(fileObjWrite, CS%restart_field(m)%var_name))) then
@@ -1177,86 +1222,39 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV)
         if (associated(CS%var_ptr3d(m)%p)) then
           call fms2_register_restart_field(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr3d(m)%p, &
                                            dimensions=dim_names(1:num_dims))
-          ! prepare the restart field checksum
-          !check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr3d(m)%p(isL:ieL,jsL:jeL,:))
         elseif (associated(CS%var_ptr2d(m)%p)) then
           call fms2_register_restart_field(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr2d(m)%p, &
                                            dimensions=dim_names(1:num_dims))
-          ! prepare the restart field checksum
-          !check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr2d(m)%p(isL:ieL,jsL:jeL))
         elseif (associated(CS%var_ptr4d(m)%p)) then
           call fms2_register_restart_field(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr4d(m)%p, &
                                            dimensions=dim_names(1:num_dims))
-          ! prepare the restart field checksum
-          !check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr4d(m)%p(isL:ieL,jsL:jeL,:,:))
         elseif (associated(CS%var_ptr1d(m)%p)) then
           ! need to pass dim_names argument as a 1-D array
           call fms2_register_restart_field(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr1d(m)%p, &
                                            dimensions=(/dim_names(1:num_dims)/))
-          ! prepare the restart field checksum
-          !check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr1d(m)%p)
         elseif (associated(CS%var_ptr0d(m)%p)) then
           ! need to pass dim_names argument as a 1-D array
           call fms2_register_restart_field(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr0d(m)%p, &
                                            dimensions=(/dim_names(1:num_dims)/))
-          ! prepare the restart field checksum
-          !check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr0d(m)%p,pelist=(/mpp_pe()/))
         endif
         ! convert the checksum to a string
-        !checksum_char = ''
-        !checksum_char = convert_checksum_to_string(check_val(m,1))
+        checksum_char = ''
+        checksum_char = convert_checksum_to_string(check_val(m,1))
         !! register the variable attributes
-        !call register_variable_attribute(fileObjWrite, CS%restart_field(m)%var_name, 'checksum', trim(checksum_char))
+        call register_variable_attribute(fileObjWrite, CS%restart_field(m)%var_name, 'checksum', &
+                                         trim(checksum_char))
         call register_variable_attribute(fileObjWrite, CS%restart_field(m)%var_name, 'units', units)
         call register_variable_attribute(fileObjWrite, CS%restart_field(m)%var_name, 'long_name', longname)
+      endif
+    enddo 
+    ! write the restart file
+    call write_restart(fileObjWrite)
+    call fms2_close_file(fileObjWrite)
 
-!    call query_vardesc(vars(1), t_grid=t_grid, hor_grid=hor_grid, caller="save_restart")
-!    t_grid = adjustl(t_grid)
-!    if (t_grid(1:1) /= 'p') &
-!      call modify_vardesc(vars(1), t_grid='s', caller="save_restart")
-!    select case (hor_grid)
-!      case ('q') ; pos = CORNER
-!      case ('h') ; pos = CENTER
-!      case ('u') ; pos = EAST_FACE
-!      case ('v') ; pos = NORTH_FACE
-!      case ('Bu') ; pos = CORNER
-!      case ('T')  ; pos = CENTER
-!      case ('Cu') ; pos = EAST_FACE
-!      case ('Cv') ; pos = NORTH_FACE
-!      case ('1') ; pos = 0
-!      case default ; pos = 0
-!    end select
+    if (associated(axis_data_CS%axis)) deallocate(axis_data_CS%axis)
+    if (associated(axis_data_CS%data)) deallocate(axis_data_CS%data)
 
-    !Prepare the checksum of the restart fields to be written to restart files
-!    if (modulo(turns, 2) /= 0) then
-!      call get_checksum_loop_ranges(G, pos, jsL, jeL, isL, ieL)
-!    else
-!      call get_checksum_loop_ranges(G, pos, isL, ieL, jsL, jeL)
-!    endif
-!    do m=start_var,next_var-1
-!      if (associated(CS%var_ptr3d(m)%p)) then
-!        check_val(m-start_var+1,1) = &
-!            mpp_chksum(CS%var_ptr3d(m)%p(isL:ieL,jsL:jeL,:), turns=-turns)
-!      elseif (associated(CS%var_ptr2d(m)%p)) then
-!        check_val(m-start_var+1,1) = &
-!            mpp_chksum(CS%var_ptr2d(m)%p(isL:ieL,jsL:jeL), turns=-turns)
-!      elseif (associated(CS%var_ptr4d(m)%p)) then
-!        check_val(m-start_var+1,1) = &
-!            mpp_chksum(CS%var_ptr4d(m)%p(isL:ieL,jsL:jeL,:,:), turns=-turns)
-!      elseif (associated(CS%var_ptr1d(m)%p)) then
-!        check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr1d(m)%p)
-!      elseif (associated(CS%var_ptr0d(m)%p)) then
-!        check_val(m-start_var+1,1) = mpp_chksum(CS%var_ptr0d(m)%p,pelist=(/mpp_pe()/))
-!      endif
-!    enddo
-   ! write the restart file
-   call write_restart(fileObjWrite)
-   call fms2_close_file(fileObjWrite)
-
-   if (associated(axis_data_CS%axis)) deallocate(axis_data_CS%axis)
-   if (associated(axis_data_CS%data)) deallocate(axis_data_CS%data)
-
-   num_files = num_files+1
+    num_files = num_files+1
   enddo
 
 end subroutine save_restart
@@ -1357,6 +1355,8 @@ subroutine write_initial_conditions(directory, filename, CS, G, time, GV)
         endif
 
         call MOM_register_diagnostic_axis(fileObjWrite, trim(dim_names(i)), dim_lengths(i))
+      endif
+    enddo
   enddo
 
   ! register and write the coordinate variables (axes) to the file

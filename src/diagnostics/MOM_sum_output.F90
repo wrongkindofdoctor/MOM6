@@ -923,10 +923,10 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, OBC, dt_
   call write_field(trim(energypath_nc), vars(10)%name, max_CFL(1), "append", &
                    var_desc=vars(10), time_level=reday, leave_file_open=.true.)
   if ((nTr_stocks > 0) .or. (CS%use_temperature)) then
-    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(1), "append", &
+    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(2), "append", &
                      var_desc=vars(11), time_level=reday, leave_file_open=.true.)
   else
-    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(1), "append", &
+    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(2), "append", &
                      var_desc=vars(11), time_level=reday)
   endif
   if (CS%use_temperature) then

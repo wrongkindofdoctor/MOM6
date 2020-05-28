@@ -81,7 +81,7 @@ public :: APPEND_FILE, ASCII_FILE, MULTIPLE, NETCDF_FILE, OVERWRITE_FILE
 public :: READONLY_FILE, SINGLE_FILE, WRITEONLY_FILE
 public :: CENTER, CORNER, NORTH_FACE, EAST_FACE
 public :: var_desc, modify_vardesc, query_vardesc, cmor_long_std
-public :: scale_data
+public :: scale_data, convert_checksum_to_string
 ! new FMS-IO routines and wrappers
 public :: attribute_exists
 public :: check_if_open
@@ -663,7 +663,7 @@ subroutine write_field_2d_DD(filename, fieldname, data, mode, domain, var_desc, 
   real, target, dimension(:,:), intent(in) :: data !< The 2-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(2), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -838,7 +838,7 @@ subroutine write_field_3d_DD(filename, fieldname, data, mode, domain, var_desc, 
   real, target, dimension(:,:,:), intent(in) :: data !< The 3-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type),  intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(3), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(3), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1177,7 +1177,7 @@ subroutine write_scalar(filename, fieldname, data, mode, var_desc, time_level, t
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, intent(in) :: data !< The 1-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc),  intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   real, optional, intent(in) :: time_level !< time value to write
   real, optional, intent(in) :: time_units !< length of the units for time [s]. The
                                           !! default value is 86400.0, for 1 day.
@@ -1290,7 +1290,7 @@ subroutine write_field_1d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:), intent(in) :: data !< The 1-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(1), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(1), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1458,7 +1458,7 @@ subroutine write_field_2d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:), intent(in) :: data !< The 2-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(2), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1633,7 +1633,7 @@ subroutine write_field_3d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:,:), intent(in) :: data !< The 3-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(4), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(4), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1805,7 +1805,7 @@ subroutine write_field_4d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:,:,:), intent(in) :: data !< The 4-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(4), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(4), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -2075,9 +2075,9 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
-  integer, dimension(2) :: start, nread, first, last ! indices for first data value and number of values to read
-  character(len=40), dimension(2) :: dim_names ! variable dimension names
+  integer :: i, dim_unlim_index, num_var_dims, first(2), last(2)
+  integer :: start(2), nread(2) ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
   integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
@@ -2119,35 +2119,6 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
 
-  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
-  dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
-
-  start(:) = 1
-  if (present(start_index)) start = start_index
-
-  if (present(edge_lengths)) then
-    nread = edge_lengths
-  else
-    do i=1,2
-      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    enddo
-  endif
-
-  if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,2
-      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
-      endif
-    enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_DD: time level specified, but variable "//&
-                     trim(fieldName)// " does not have an unlimited dimension.")
-  endif
-
   pos = CENTER
   if (present(x_position)) then
     if (present(y_position)) then
@@ -2158,16 +2129,59 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   elseif (present(y_position)) then
     pos = ypos
   endif
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos) ! Get the global indicies
+
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
+  dim_names(:) = ""
+  call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
+
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
   call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
   last(1) = iec - isg + 1 ! get array indices for the axis data
   last(2) = jec - jsg + 1
   first(1) = isc - isg + 1
   first(2) = jsc - jsg + 1
-  nread(1) = last(1) - first(1) + 1
-  nread(2) = last(2) - first(2) + 1
-  ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=first, edge_lengths=nread)
+
+  start(:) = 1
+  if (present(start_index)) then
+    start = start_index
+  else
+    start(:) = first(:)
+  endif
+
+  if (present(edge_lengths)) then
+    nread = edge_lengths
+  else
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    !do i=1,num_var_dims
+    !  call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
+    !enddo
+  endif
+
+  dim_unlim_index=0
+  if (present(timelevel)) then
+    do i=1,num_var_dims
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
+        dim_unlim_index=i
+        nread(i) = 1
+        start(i) = dim_unlim_index
+      endif
+    enddo
+    if (dim_unlim_index .LE. 0) then
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_2d_DD: time level specified, but the variable "//&
+                     trim(fieldName)// " does not have an unlimited dimension.")
+      ! read the data
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    else
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  endif
+
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2178,6 +2192,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
     if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
     file_var_meta_DD%nvars = 0
   endif
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_2d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 3-D domain-decomposed data field named "fieldname"
@@ -2200,11 +2215,12 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! if .true., the variable was found in the netCDF file
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
-  integer, dimension(3) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(3) :: dim_names ! variable dimension names
+  integer :: i, dim_unlim_index, num_var_dims
+  integer, dimension(3) :: start, nread, first, last ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
-  integer :: xpos, ypos ! x and y domain positions
+  integer :: xpos, ypos, pos ! x and y domain positions
+  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
 
   xpos = CENTER
   ypos = CENTER
@@ -2241,36 +2257,66 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
                                             trim(filename))
   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
- ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  pos = CENTER
+  if (present(x_position)) then
+    if (present(y_position)) then
+      pos = CORNER
+    else
+      pos = xpos
+    endif
+  elseif (present(y_position)) then
+    pos = ypos
+  endif
+
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
+  last(1) = iec - isg + 1 ! get array indices for the axis data
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
+
   start(:) = 1
-  if (present(start_index)) start = start_index
+  if (present(start_index)) then
+    start = start_index
+  else
+    start(1:2) = first(1:2)
+  endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,3
-      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    enddo
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    call get_dimension_size(fileobj_read_dd, trim(dim_names(3)), nread(3))
   endif
-
+  dim_unlim_index=0
   if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,3
+    do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
         dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
+        nread(i) = 1
+        start(i) = dim_unlim_index
       endif
     enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_3d_DD: time level specified, but variable "//&
+    if (dim_unlim_index .LE. 0) then
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_3d_DD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
+      ! read the data
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    else
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
-   ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
   endif ; endif
@@ -2281,6 +2327,7 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
     file_var_meta_DD%nvars = 0
   endif
 
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_3d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 4-D domain-decomposed data field named "fieldname"
@@ -2303,11 +2350,12 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
-  integer, dimension(4) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(4) :: dim_names ! variable dimension names
+  integer :: i, dim_unlim_index, num_var_dims
+  integer, dimension(4) :: start, nread, first, last ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
-  integer :: xpos, ypos ! x and y domain positions
+  integer :: xpos, ypos, pos ! x and y domain positions
+  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
 
   xpos = CENTER
   ypos = CENTER
@@ -2342,38 +2390,72 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   enddo
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_4d_DD: "//trim(fieldname)//" not found in"//&
                                             trim(filename))
-  ! register the variable axes
+   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
-  ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  pos = CENTER
+  if (present(x_position)) then
+    if (present(y_position)) then
+      pos = CORNER
+    else
+      pos = xpos
+    endif
+  elseif (present(y_position)) then
+    pos = ypos
+  endif
+
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
+  last(1) = iec - isg + 1 ! get array indices for the axis data
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
+
   start(:) = 1
-  if (present(start_index)) start = start_index
+  if (present(start_index)) then
+    start(:) = start_index(:)
+  else
+    start(1:2) = first(1:2)
+  endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,4
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    do i=3,num_var_dims
       call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
     enddo
   endif
-
+  dim_unlim_index=0
   if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,4
+    do i=1, num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
         dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
+      endif
+      if (i .eq. 4) then
+        nread(i) = 1
+        start(i) = timelevel
       endif
     enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_4d_DD: time level specified, but variable "//&
+    if (dim_unlim_index .LE. 0) then
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_4d_DD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
+      ! read the data
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    else
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
-  ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
   endif ; endif
@@ -2383,6 +2465,7 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
      if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
     file_var_meta_DD%nvars = 0
   endif
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_4d_DD
 
 !!> This routine calls the fms_io read_data subroutine to read a scalar (0-D) field named "fieldname"
@@ -2582,7 +2665,7 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
       endif
     enddo
     if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_noDD: time level specified, but variable "//&
+      call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
   endif
   ! read the data
@@ -2670,7 +2753,7 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_le
       endif
     enddo
     if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_3d_noDD: time level specified, but variable "//&
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_3d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
   endif
   ! read the data
@@ -2953,11 +3036,11 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
                                                      !! by before they are returned.
   logical, optional, intent(in) :: leave_file_open !< if .true., leave file open
   ! local
-  integer :: is, ie, js, je, i
+  integer :: is, ie, js, je, i, ndims, dim_unlim
   integer :: u_pos, v_pos
   integer :: substring_index
-  integer, dimension(2) :: start, dim_sizes_u, dim_sizes_v
-  character(len=32), dimension(2) :: dim_names_u, dim_names_v, units_u, units_v
+  integer, allocatable :: dim_sizes_u(:), dim_sizes_v(:)
+  character(len=32), allocatable :: dim_names_u(:), dim_names_v(:), units_u(:), units_v(:)
   logical :: file_open_success ! .true. if open file is successful
   logical :: close_the_file ! indicates whether to close the file after MOM_read_vector is called; default is .true.
 
@@ -2975,15 +3058,22 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
     elseif (stagger == AGRID) then ; u_pos = CENTER ; v_pos = CENTER ; endif
   endif
 
-  start(:) = 1
-  call get_variable_size(fileobj_read_dd, u_fieldname, dim_sizes_u, broadcast=.true.)
-  call get_variable_size(fileobj_read_dd, v_fieldname, dim_sizes_v, broadcast=.true.)
-  call get_variable_dimension_names(fileobj_read_dd, u_fieldname, dim_names_u, broadcast=.true.)
-  call get_variable_dimension_names(fileobj_read_dd, v_fieldname, dim_names_v, broadcast=.true.)
+  ndims = get_variable_num_dimensions(fileobj_read_dd, u_fieldname)
+  allocate(dim_sizes_u(ndims))
+  allocate(dim_sizes_v(ndims))
+  allocate(dim_names_u(ndims))
+  allocate(dim_names_v(ndims))
+  allocate(units_u(ndims))
+  allocate(units_v(ndims))
+
+  call get_variable_size(fileobj_read_dd, u_fieldname, dim_sizes_u)
+  call get_variable_size(fileobj_read_dd, v_fieldname, dim_sizes_v)
+  call get_variable_dimension_names(fileobj_read_dd, u_fieldname, dim_names_u)
+  call get_variable_dimension_names(fileobj_read_dd, v_fieldname, dim_names_v)
 
   units_u(:) = ""
   units_v(:) = ""
-  do i=1,2
+  do i=1,ndims
     substring_index = 0
     ! register the u axes
     if (.not.(is_dimension_registered(fileobj_read_dd, dim_names_u(i)))) then
@@ -2997,14 +3087,7 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
         if (substring_index .gt. 0) then
           call register_axis(fileobj_read_dd, dim_names_u(i), "y", domain_position=u_pos)
         else
-          if (is_dimension_unlimited(fileobj_read_dd, dim_names_u(i))) then
-            if (present(timelevel)) then
-              start(i)=timelevel
-              dim_sizes_u(i) = 1
-              dim_sizes_v(i) = 1
-            endif
-            call register_axis(fileobj_read_dd, dim_names_u(i),dim_sizes_u(i))
-          endif
+          call register_axis(fileobj_read_dd, dim_names_u(i), dim_sizes_u(i))
         endif
       endif
     endif
@@ -3023,8 +3106,28 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
     endif
   enddo
   ! read the data
-  call read_data(fileobj_read_dd, u_fieldname, u_data, corner=start, edge_lengths=dim_sizes_u)
-  call read_data(fileobj_read_dd, v_fieldname, v_data, corner=start, edge_lengths=dim_sizes_v)
+  dim_unlim = 0
+  if (present(timelevel)) then
+    do i=1,ndims
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names_u(i))) then
+        dim_unlim = i
+        exit
+      endif
+    enddo
+    if (dim_unlim .gt. 0) then
+      call read_data(fileobj_read_dd, u_fieldname, u_data, edge_lengths=dim_sizes_u(1:2), &
+                     unlim_dim_level=timelevel)
+      call read_data(fileobj_read_dd, v_fieldname, v_data, edge_lengths=dim_sizes_v(1:2), &
+                     unlim_dim_level=timelevel)
+       
+    else
+      call read_data(fileobj_read_dd, u_fieldname, u_data, edge_lengths=dim_sizes_u)
+      call read_data(fileobj_read_dd, v_fieldname, v_data, edge_lengths=dim_sizes_v) 
+    endif
+  else
+    call read_data(fileobj_read_dd, u_fieldname, u_data, edge_lengths=dim_sizes_u)
+    call read_data(fileobj_read_dd, v_fieldname, v_data, edge_lengths=dim_sizes_v)
+  endif
   ! close the file
   if (close_the_file) then
     if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
@@ -3038,7 +3141,12 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
     call get_simple_array_j_ind(MOM_Domain, size(v_data,2), js, je)
     v_data(is:ie,js:je) = scale*v_data(is:ie,js:je)
   endif ; endif
-
+  if (allocated(dim_names_u)) deallocate(dim_names_u)
+  if (allocated(dim_names_v)) deallocate(dim_names_v)
+  if (allocated(dim_sizes_u)) deallocate(dim_sizes_u)
+  if (allocated(dim_sizes_v)) deallocate(dim_sizes_v)
+  if (allocated(units_u)) deallocate(units_u)
+  if (allocated(units_v)) deallocate(units_v)
 end subroutine MOM_read_vector_2d
 
 !> This routine uses the fms_io read_data interface to read a pair of distributed
