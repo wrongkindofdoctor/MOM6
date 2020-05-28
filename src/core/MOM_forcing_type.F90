@@ -2933,6 +2933,7 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   if (present(fix_accum_bug)) fluxes%gustless_accum_bug = .not.fix_accum_bug
 end subroutine allocate_forcing_by_group
 
+
 subroutine allocate_forcing_by_ref(fluxes_ref, G, fluxes)
   type(forcing), intent(in) :: fluxes_ref  !< Reference fluxes
   type(ocean_grid_type), intent(in) :: G        !< Grid metric of target fluxes

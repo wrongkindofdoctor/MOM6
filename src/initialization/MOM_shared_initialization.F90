@@ -282,8 +282,8 @@ subroutine apply_topography_edits_from_file(D, G, param_file, US)
     j = jg(n) - G%jsd_global + 2
     if (i>=G%isc .and. i<=G%iec .and. j>=G%jsc .and. j<=G%jec) then
       if (new_depth(n)/=0.) then
-        write(*,'(a,3i5,f8.2,a,f8.2,2i4)') &
-          'Ocean topography edit: ',n,ig(n),jg(n),D(i,j)/m_to_Z,'->',abs(new_depth(n)),i,j
+       ! write(*,'(a,3i5,f8.2,a,f8.2,2i4)') &
+       !   'Ocean topography edit: ',n,ig(n),jg(n),D(i,j)/m_to_Z,'->',abs(new_depth(n)),i,j
         D(i,j) = abs(m_to_Z*new_depth(n)) ! Allows for height-file edits (i.e. converts negatives)
       else
         call MOM_error(FATAL, ' apply_topography_edits_from_file: '//&

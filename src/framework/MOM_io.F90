@@ -81,7 +81,7 @@ public :: APPEND_FILE, ASCII_FILE, MULTIPLE, NETCDF_FILE, OVERWRITE_FILE
 public :: READONLY_FILE, SINGLE_FILE, WRITEONLY_FILE
 public :: CENTER, CORNER, NORTH_FACE, EAST_FACE
 public :: var_desc, modify_vardesc, query_vardesc, cmor_long_std
-public :: scale_data
+public :: scale_data, convert_checksum_to_string
 ! new FMS-IO routines and wrappers
 public :: attribute_exists
 public :: check_if_open
@@ -110,6 +110,7 @@ public :: get_variable_size
 public :: get_variable_units
 public :: get_variable_unlimited_dimension_index
 public :: global_att_exists
+public :: is_dimension_registered
 public :: is_dimension_unlimited
 public :: MOM_get_diagnostic_axis_data
 public :: MOM_read_data
@@ -178,6 +179,7 @@ interface MOM_read_data
   module procedure MOM_read_data_2d_noDD
   module procedure MOM_read_data_1d_noDD
   module procedure MOM_read_data_2d_noDD_diag_axes
+  module procedure MOM_read_data_2d_supergrid
 end interface
 
 !> Read a pair of data fields representing the two components of a vector from a netcdf file
@@ -206,6 +208,18 @@ interface scale_data
   module procedure scale_data_2d
   module procedure scale_data_1d
 end interface
+
+!> interface for creating files to write/overwrite/append to
+interface create_file
+  module procedure create_file_filename
+  module procedure create_file_fileobj_dd
+end interface create_file
+
+!> interface for registering axes associated with a variable to a netCDF file object 
+interface MOM_register_variable_axes
+  module procedure MOM_register_variable_axes_subdomain
+  module procedure MOM_register_variable_axes_full
+end interface MOM_register_variable_axes
 
 !>\note CAUTION: The following variables are saved by default, and are only necessary for consecutive calls to
 !! MOM_read_data or write_field with the same file name. The user should ensure that fms2_close_file on
@@ -243,7 +257,7 @@ contains
 
 !> This routine opens a netcdf file in "write" or "overwrite" mode, registers the global diagnostic axes, and writes
 !! the axis data and metadata to the file
-subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, checksums)
+subroutine create_file_filename(filename, vars, numVariables, register_time, G, DG, GV, checksums, is_restart)
   character(len=*),      intent(in)               :: filename !< full path to the netcdf file
   type(vardesc), dimension(:), intent(in)         :: vars !< structures describing the output
   integer,               intent(in)               :: numVariables !< number of variables to write to the file
@@ -258,6 +272,7 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
                                                      !! required if the new file uses any
                                                      !! vertical grid axes.
   integer(kind=8), dimension(:,:), optional, intent(in) :: checksums(:,:)  !< checksums of the variables
+  logical, optional, intent(in) :: is_restart !< indicates whether file is a restart file
 
   ! local
   type(FmsNetcdfFile_t) :: fileObjNoDD ! non-domain-decomposed netcdf file object returned by open_file
@@ -267,6 +282,7 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
   logical :: file_open_successDD, file_open_successNoDD ! true if netcdf file is opened
   logical :: one_file, domain_set ! indicates whether the file will be domain-decomposed or not
   logical :: reg_time ! register the time if .true.
+  logical :: is_restart_file
   character(len=10) :: nc_mode
   character(len=64) :: checksum_char ! checksum character array created from checksum argument
   character(len=1024) :: filename_temp
@@ -286,6 +302,8 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
     domain_set = .true. ; Domain => dG%Domain
   endif
 
+  is_restart_file = .false.
+  if (present(is_restart)) is_restart_file = is_restart
   ! append '.nc' to the file name if it is missing
   filename_temp = ""
   substring_index = 0
@@ -318,7 +336,8 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
     endif
 
     if (.not. check_if_open(fileObjDD)) &
-      file_open_successDD=fms2_open_file(fileObjDD, filename_temp, trim(nc_mode), Domain%mpp_domain, is_restart=.false.)
+      file_open_successDD=fms2_open_file(fileObjDD, filename_temp, trim(nc_mode), Domain%mpp_domain, &
+                                          is_restart=is_restart_file)
   else
     ! get the pes associated with the file.
     !>\note this is required so that only pe(1) is identified as the root pe to create the file
@@ -330,18 +349,16 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
     enddo
 
     if (.not. check_if_open(fileObjNoDD)) &
-      file_open_successNoDD=fms2_open_file(fileObjNoDD, filename_temp, trim(nc_mode), is_restart=.false., pelist=pelist)
+      file_open_successNoDD=fms2_open_file(fileObjNoDD, filename_temp, trim(nc_mode), &
+                                           is_restart=is_restart_file, pelist=pelist)
   endif
-
   ! allocate the output data variable dimension attributes
   allocate(dim_names(numVariables,4))
   dim_names(:,:) = ""
-
   ! allocate the axis data and attribute types for the file
   !> \note The user should increase the sizes of the axis and data attributes to accommodate more axes if necessary.
   allocate(axis_data_CS%axis(7))
   allocate(axis_data_CS%data(7))
-
   ! axis registration procedure for the domain-decomposed case
   if (file_open_successDD) then
     do i=1,numVariables
@@ -370,15 +387,18 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
           if (.not.(dimension_exists(fileObjDD, dim_names(i,j)))) then
 
             if (present(G)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              endif   
             elseif (present(dG)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              endif
             endif
-
-            if (present(GV)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, GV=GV)
-            endif
-
               call MOM_register_diagnostic_axis(fileObjDD, trim(dim_names(i,j)), dim_lengths(j))
           endif
           ! register the axis attributes and write the axis data to the file
@@ -442,16 +462,19 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
         ! register the variable axes to the file if they are not already registered
         if (dim_lengths(j) .gt. 0) then
           if (.not.(dimension_exists(fileObjNoDD, dim_names(i,j)))) then
-
             if (present(G)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              endif   
             elseif (present(dG)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              endif
             endif
-
-            if (present(GV)) &
-                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, GV=GV)
-
             call register_axis(fileObjNoDD, trim(dim_names(i,j)), dim_lengths(j))
           endif
           ! register the axis attributes and write the axis data to the file
@@ -493,7 +516,190 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
   if (allocated(pelist)) deallocate(pelist)
   nullify(Domain)
 
-end subroutine create_file
+end subroutine create_file_filename
+
+!> This routine opens a netcdf file in "write" or "overwrite" mode, registers the global diagnostic axes, and writes
+!! the axis data and metadata to the file. It returns the netcdf file object for additional writing.
+subroutine create_file_fileobj_dd(filename, fileObjDD, vars, numVariables, register_time, G, DG, GV, checksums, is_restart)
+  character(len=*),      intent(in)               :: filename !< full path to the netcdf file
+  type(FmsNetcdfDomainFile_t), intent(inout)      :: fileObjDD !< domain-decomposed netcdf file object
+                                                               !! returned by open_file
+  type(vardesc), dimension(:), intent(in)         :: vars !< structures describing the output
+  integer,               intent(in)               :: numVariables !< number of variables to write to the file
+  logical, optional, intent(in) :: register_time !< if .true., register a time dimension to the file
+  type(ocean_grid_type),   optional, intent(in) :: G !< ocean horizontal grid structure; G or dG
+                                                     !! is required if the new file uses any
+                                                     !! horizontal grid axes.
+  type(dyn_horgrid_type),  optional, intent(in) :: dG !< dynamic horizontal grid structure; G or dG
+                                                     !! is required if the new file uses any
+                                                     !! horizontal grid axes.
+  type(verticalGrid_type), optional, intent(in) :: GV !< ocean vertical grid structure, which is
+                                                     !! required if the new file uses any
+                                                     !! vertical grid axes.
+  integer(kind=8), dimension(:,:), optional, intent(in) :: checksums(:,:)  !< checksums of the variables
+  logical, optional, intent(in) :: is_restart !< indicates whether file is a restart file
+
+  ! local
+  type(axis_data_type) :: axis_data_CS ! structure for coordinate variable metadata
+  type(MOM_domain_type), pointer :: Domain => NULL()
+  logical :: file_open_successDD ! true if netcdf file is opened
+  logical :: one_file, domain_set ! indicates whether the file will be domain-decomposed or not
+  logical :: reg_time ! register the time if .true.
+  logical :: is_restart_file ! .true. if the file is a restart file
+  character(len=10) :: nc_mode
+  character(len=64) :: checksum_char ! checksum character array created from checksum argument
+  character(len=1024) :: filename_temp
+  character(len=48), allocatable, dimension(:,:) :: dim_names ! variable dimension names
+  integer :: i, is, ie, j, substring_index, total_axes
+  integer :: num_dims ! number of dimensions
+  integer :: thread ! indicates whether threading is used
+  integer, dimension(4) :: dim_lengths ! variable dimension lengths
+  integer, allocatable :: pelist(:) ! list of pes associated with the file
+  real :: time
+
+  ! determine whether the file will be domain-decomposed or not
+  domain_set=.false.
+  if (present(G)) then
+    domain_set = .true. ; Domain => G%Domain
+  elseif (present(dG)) then
+    domain_set = .true. ; Domain => dG%Domain
+  endif
+
+  is_restart_file = .false.
+  if (present(is_restart)) is_restart_file = is_restart
+  ! append '.nc' to the file name if it is missing
+  filename_temp = ""
+  substring_index = 0
+  substring_index = index(trim(filename), ".nc")
+  if (substring_index < 1) then
+    filename_temp = append_substring(filename,".nc")
+  else
+    filename_temp = filename
+  endif
+
+  nc_mode = ""
+  if (file_exists(trim(filename_temp))) then
+    nc_mode = "overwrite"
+  else
+    nc_mode = "write"
+  endif
+
+  reg_time = .false.
+  if (present(register_time)) reg_time = register_time
+  ! open the file
+  file_open_successDD=.false.
+  ! define the io domain if on one pe and the io domain is not set
+  if (domain_set) then
+    if (mpp_get_domain_npes(domain%mpp_domain) .eq. 1 ) then
+      if (.not. associated(mpp_get_io_domain(domain%mpp_domain))) &
+        call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
+    endif
+  else
+    ! get the pes associated with the file.
+    !>\note this is required so that only pe(1) is identified as the root pe to create the file
+    !! Otherwise, multiple pes may try to open the file in write (NC_NOCLOBBER) mode, leading to failure
+    allocate(pelist(mpp_npes()))
+    pelist(:) = 0
+    do i=1,size(pelist)
+      pelist(i) = i-1
+    enddo
+  endif
+  if (.not. check_if_open(fileObjDD)) &
+    file_open_successDD=fms2_open_file(fileObjDD, filename_temp, trim(nc_mode), Domain%mpp_domain, &
+                                       is_restart=is_restart_file)
+  ! allocate the output data variable dimension attributes
+  allocate(dim_names(numVariables,4))
+  dim_names(:,:) = ""
+  ! allocate the axis data and attribute types for the file
+  !> \note The user should increase the sizes of the axis and data attributes to accommodate more axes if necessary.
+  allocate(axis_data_CS%axis(7))
+  allocate(axis_data_CS%data(7))
+  ! axis registration procedure for the domain-decomposed case
+  if (file_open_successDD) then
+    do i=1,numVariables
+      num_dims=0
+      dim_lengths(:) = 0
+      !> \note The time dimension is registered separately at the end of the procedure if reg_time = .true.
+      !! so the t_grid argument in get_var_dimension_features is set to '1' (do nothing)
+      if (present(G)) then
+        call get_var_dimension_features(vars(i)%hor_grid, vars(i)%z_grid, '1', dim_names(i,:), &
+                                          dim_lengths, num_dims, G=G)
+      elseif(present(dG)) then
+        call get_var_dimension_features(vars(i)%hor_grid, vars(i)%z_grid, '1', dim_names(i,:), &
+                                          dim_lengths, num_dims, dG=dG)
+      endif
+
+      if(present(GV)) &
+        call get_var_dimension_features(vars(i)%hor_grid, vars(i)%z_grid, '1', dim_names(i,:), &
+                                        dim_lengths, num_dims, GV=GV)
+      !> \note num_dims will be 0 for scalar values
+      if (num_dims .le. 0) cycle
+
+      do j=1,num_dims
+        ! register the variable axes to the file if they are not already registered
+        if (dim_lengths(j) .gt. 0) then
+          if (.not.(dimension_exists(fileObjDD, dim_names(i,j)))) then
+
+            if (present(G)) then
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              endif   
+            elseif (present(dG)) then
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              endif
+            endif
+              call MOM_register_diagnostic_axis(fileObjDD, trim(dim_names(i,j)), dim_lengths(j))
+          endif
+          ! register the axis attributes and write the axis data to the file
+          if (.not.(variable_exists(fileObjDD, trim(axis_data_CS%axis(j)%name)))) then
+            if (associated(axis_data_CS%data(j)%p)) then
+
+                call register_field(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                  "double", dimensions=(/trim(axis_data_CS%axis(j)%name)/))
+
+                call register_variable_attribute(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                               'long_name', axis_data_CS%axis(j)%longname)
+
+                call register_variable_attribute(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                               'units', trim(axis_data_CS%axis(j)%units))
+
+                if (len_trim(axis_data_CS%axis(j)%positive)>1) &
+                  call register_variable_attribute(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                                   'positive', trim(axis_data_CS%axis(j)%positive))
+
+                if (axis_data_CS%axis(j)%is_domain_decomposed) then
+                  call get_global_io_domain_indices(fileObjDD, trim(axis_data_CS%axis(j)%name), is, ie)
+                  call write_data(fileObjDD, trim(axis_data_CS%axis(j)%name), axis_data_CS%data(j)%p(is:ie))
+                else
+                  call write_data(fileObjDD, trim(axis_data_CS%axis(j)%name), axis_data_CS%data(j)%p)
+                endif
+            endif
+          endif
+        endif
+      enddo
+    enddo
+
+    if (reg_time) then
+     if (.not.(dimension_exists(fileObjDD,"Time"))) &
+       call register_axis(fileObjDD, "Time", unlimited)
+    endif
+  else
+    call MOM_error(FATAL, "MOM_io::create_file_filobj_dd: unable to open file "//trim(filename))
+  endif
+
+  deallocate(dim_names)
+  deallocate(axis_data_CS%axis)
+  deallocate(axis_data_CS%data)
+  if (allocated(pelist)) deallocate(pelist)
+  nullify(Domain)
+
+end subroutine create_file_fileobj_dd
+
 
 !> This function uses the fms_io function write_data to write a 1-D domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM
@@ -663,7 +869,7 @@ subroutine write_field_2d_DD(filename, fieldname, data, mode, domain, var_desc, 
   real, target, dimension(:,:), intent(in) :: data !< The 2-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(2), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -838,7 +1044,7 @@ subroutine write_field_3d_DD(filename, fieldname, data, mode, domain, var_desc, 
   real, target, dimension(:,:,:), intent(in) :: data !< The 3-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
   type(MOM_domain_type),  intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(3), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(3), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1177,7 +1383,7 @@ subroutine write_scalar(filename, fieldname, data, mode, var_desc, time_level, t
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, intent(in) :: data !< The 1-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc),  intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   real, optional, intent(in) :: time_level !< time value to write
   real, optional, intent(in) :: time_units !< length of the units for time [s]. The
                                           !! default value is 86400.0, for 1 day.
@@ -1290,7 +1496,7 @@ subroutine write_field_1d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:), intent(in) :: data !< The 1-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(1), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(1), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1458,7 +1664,7 @@ subroutine write_field_2d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:), intent(in) :: data !< The 2-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(2), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1633,7 +1839,7 @@ subroutine write_field_3d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:,:), intent(in) :: data !< The 3-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(4), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(4), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1805,7 +2011,7 @@ subroutine write_field_4d_noDD(filename, fieldname, data, mode, var_desc, start_
   character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
   real, target, dimension(:,:,:,:), intent(in) :: data !< The 4-dimensional data array to pass to read_data
   character(len=*), intent(in) :: mode !< "write", "overwrite", or "append"
-  type(vardesc), intent(in) :: var_desc !< structure describing variable output
+  type(vardesc), optional, intent(in) :: var_desc !< structure describing variable output
   integer, dimension(4), optional, intent(in) :: start_index !< starting index of data buffer. Default is 1
   integer, dimension(4), optional, intent(in) :: edge_lengths !< number of data values to read in; default is the
                                                           !! variable size
@@ -1984,9 +2190,9 @@ subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i
+  integer :: i, num_var_dims, dim_unlim_size
   integer, dimension(1) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(1) :: dim_names ! variable dimension names
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos ! x and y domain positions
 
@@ -2026,6 +2232,7 @@ subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, start_index, e
   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
   ! set the start and nread values that will be passed as the read_data start_index and edge_lengths arguments
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
@@ -2042,7 +2249,25 @@ subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, start_index, e
     call get_dimension_size(fileobj_read_dd, trim(dim_names(1)), nread(1))
   endif
   ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  dim_unlim_size = 0
+  if (present(timelevel)) then
+    do i=1,num_var_dims
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
+        call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
+        exit
+      endif
+    enddo
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_1d_DD: time level specified, but the variable "//&
+                      trim(fieldName)// " does not have an unlimited dimension.")
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  endif
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2051,8 +2276,9 @@ subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, start_index, e
   if (close_the_file) then
     if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
      if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
-    file_var_meta_DD%nvars = 0
+     file_var_meta_DD%nvars = 0
   endif
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_1d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 2-D domain-decomposed data field named "fieldname"
@@ -2075,9 +2301,9 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
-  integer, dimension(2) :: start, nread, first, last ! indices for first data value and number of values to read
-  character(len=40), dimension(2) :: dim_names ! variable dimension names
+  integer :: i, dim_unlim_size, num_var_dims, first(2), last(2)
+  integer :: start(2), nread(2) ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
   integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
@@ -2114,39 +2340,10 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
       exit
     endif
   enddo
-  if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_DD: "//trim(fieldname)//" not found in"//&
+  if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_DD: "//trim(fieldname)//" not found in "//&
                                             trim(filename))
   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
-
-  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
-  dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
-
-  start(:) = 1
-  if (present(start_index)) start = start_index
-
-  if (present(edge_lengths)) then
-    nread = edge_lengths
-  else
-    do i=1,2
-      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    enddo
-  endif
-
-  if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,2
-      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
-      endif
-    enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_DD: time level specified, but variable "//&
-                     trim(fieldName)// " does not have an unlimited dimension.")
-  endif
 
   pos = CENTER
   if (present(x_position)) then
@@ -2158,16 +2355,45 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   elseif (present(y_position)) then
     pos = ypos
   endif
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos) ! Get the global indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
-  last(1) = iec - isg + 1 ! get array indices for the axis data
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
-  nread(1) = last(1) - first(1) + 1
-  nread(2) = last(2) - first(2) + 1
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
+  dim_names(:) = ""
+  call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
+
+  start(:) = 1
+  if (present(start_index)) then
+    start = start_index
+  !else
+  !  start(:) = first(:)
+  endif
+
+  if (present(edge_lengths)) then
+    nread = edge_lengths
+  else
+    !nread(1) = last(1) - first(1) + 1
+    !nread(2) = last(2) - first(2) + 1
+    do i=1,num_var_dims
+      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
+    enddo
+  endif
   ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=first, edge_lengths=nread)
+  dim_unlim_size=0
+  if (present(timelevel)) then
+    do i=1,num_var_dims
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
+        call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
+      endif
+    enddo
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  endif
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2178,6 +2404,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
     if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
     file_var_meta_DD%nvars = 0
   endif
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_2d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 3-D domain-decomposed data field named "fieldname"
@@ -2200,11 +2427,12 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! if .true., the variable was found in the netCDF file
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
-  integer, dimension(3) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(3) :: dim_names ! variable dimension names
+  integer :: i, dim_unlim_size, num_var_dims
+  integer, dimension(3) :: start, nread, first, last ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
-  integer :: xpos, ypos ! x and y domain positions
+  integer :: xpos, ypos, pos ! x and y domain positions
+  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
 
   xpos = CENTER
   ypos = CENTER
@@ -2241,36 +2469,64 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
                                             trim(filename))
   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
- ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  pos = CENTER
+  if (present(x_position)) then
+    if (present(y_position)) then
+      pos = CORNER
+    else
+      pos = xpos
+    endif
+  elseif (present(y_position)) then
+    pos = ypos
+  endif
+
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
+  last(1) = iec - isg + 1 ! get array indices for the axis data
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
+
   start(:) = 1
-  if (present(start_index)) start = start_index
+  if (present(start_index)) then
+    start = start_index
+  else
+    start(1:2) = first(1:2)
+  endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,3
-      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    enddo
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    call get_dimension_size(fileobj_read_dd, trim(dim_names(3)), nread(3))
   endif
-
+ ! read the data
+  dim_unlim_size=0
   if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,3
+    do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
+        call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
       endif
     enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_3d_DD: time level specified, but variable "//&
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_3d_DD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
-   ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
   endif ; endif
@@ -2281,6 +2537,7 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
     file_var_meta_DD%nvars = 0
   endif
 
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_3d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 4-D domain-decomposed data field named "fieldname"
@@ -2303,11 +2560,12 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
-  integer, dimension(4) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(4) :: dim_names ! variable dimension names
+  integer :: i, dim_unlim_size, num_var_dims
+  integer, dimension(4) :: start, nread, first, last ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
-  integer :: xpos, ypos ! x and y domain positions
+  integer :: xpos, ypos, pos ! x and y domain positions
+  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
 
   xpos = CENTER
   ypos = CENTER
@@ -2342,38 +2600,71 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   enddo
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_4d_DD: "//trim(fieldname)//" not found in"//&
                                             trim(filename))
-  ! register the variable axes
+   ! register the variable axes
   call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
-  ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  pos = CENTER
+  if (present(x_position)) then
+    if (present(y_position)) then
+      pos = CORNER
+    else
+      pos = xpos
+    endif
+  elseif (present(y_position)) then
+    pos = ypos
+  endif
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
+  last(1) = iec - isg + 1 ! get array indices for the axis data
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
+
   start(:) = 1
-  if (present(start_index)) start = start_index
+  if (present(start_index)) then
+    start(:) = start_index(:)
+  else
+    start(1:2) = first(1:2)
+  endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,4
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    do i=3,num_var_dims
       call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
     enddo
   endif
-
+  ! read the data
+  dim_unlim_size=0
   if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,4
+    do i=1, num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
+        call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
+      endif
+      if (i .eq. 4) then
+        nread(i) = 1
+        start(i) = timelevel
       endif
     enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_4d_DD: time level specified, but variable "//&
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_4d_DD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
-  ! read the data
-  call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
   endif ; endif
@@ -2383,6 +2674,7 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
      if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
     file_var_meta_DD%nvars = 0
   endif
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_4d_DD
 
 !!> This routine calls the fms_io read_data subroutine to read a scalar (0-D) field named "fieldname"
@@ -2449,9 +2741,9 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
-  integer :: i, ndims
-  integer, dimension(2) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(1) :: dim_names ! variable dimension names
+  integer :: i, num_var_dims, dim_unlim_size
+  integer, dimension(1) :: start, nread ! indices for first data value and number of values to read
+  character(len=40), allocatable:: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
 
   close_the_file = .true.
@@ -2479,14 +2771,15 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_le
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_1d_noDD: "//trim(fieldname)//&
                                             " not found in "//trim(filename))
 
-  ndims = get_variable_num_dimensions(fileobj_read,trim(fieldname))
-
+  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(fieldname))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read, trim(fieldname), dim_names)
+  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
 
-  start(1) = 1
+  ! set the start and nread values that will be passed as the read_data start_index and edge_lengths arguments
+  start(1)=1
   if (present(timelevel)) then
-    if(is_dimension_unlimited(fileobj_read, dim_names(1))) start(1) = timelevel
+    if (is_dimension_unlimited(fileobj_read, dim_names(1))) start(1) = timelevel
   elseif (present(start_index)) then
     start(1) = start_index(1)
   endif
@@ -2494,10 +2787,28 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_le
   if (present(edge_lengths)) then
     nread(1) = edge_lengths(1)
   else
-    call get_dimension_size(fileobj_read, dim_names(1), nread(1))
+    call get_dimension_size(fileobj_read, trim(dim_names(1)), nread(1))
   endif
   ! read the data
-  call read_data(fileobj_read, trim(fieldname), data, corner=start, edge_lengths=nread)
+  dim_unlim_size = 0
+  if (present(timelevel)) then
+    do i=1,num_var_dims
+      if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
+        exit
+      endif
+    enddo
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_1d_noDD: time level specified, but the variable "//&
+                      trim(fieldName)// " does not have an unlimited dimension.")
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    endif
+  else
+    call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  endif
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2508,7 +2819,7 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_le
     if (allocated(file_var_meta_noDD%var_names)) deallocate(file_var_meta_noDD%var_names)
     file_var_meta_noDD%nvars = 0
   endif
-
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_1d_noDD
 
 !> This routine calls the fms_io read_data subroutine to read 2-D non-domain-decomposed data field named "fieldname"
@@ -2527,9 +2838,9 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(2) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(2) :: dim_names ! variable dimension names
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
 
   close_the_file = .true.
@@ -2558,8 +2869,10 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_noDD: "//trim(fieldname)//&
                                             " not found in "//trim(filename))
   ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(fieldname))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read, trim(fieldname), dim_names)
+  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
 
   start(:) = 1
   if (present(start_index)) start = start_index
@@ -2572,21 +2885,25 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
     enddo
   endif
 
+  ! read the data
+  dim_unlim_size=0
   if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,2
+    do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
       endif
     enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_noDD: time level specified, but variable "//&
+    if (dim_unlim_size .LE. 0) then
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_2d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    else
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    endif
+  else
+    call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
-  ! read the data
-  call read_data(fileobj_read, trim(fieldname), data, corner=start, edge_lengths=nread)
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2597,6 +2914,7 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
     if (allocated(file_var_meta_noDD%var_names)) deallocate(file_var_meta_noDD%var_names)
     file_var_meta_noDD%nvars = 0
   endif
+  if(allocated(dim_names)) deallocate(dim_names)
 
 end subroutine MOM_read_data_2d_noDD
 
@@ -2616,9 +2934,9 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(3) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(3) :: dim_names ! variable dimension names
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
 
   close_the_file = .true.
@@ -2645,36 +2963,41 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_le
   enddo
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_3d_noDD: "//trim(fieldname)//&
                                             " not found in "//trim(filename))
-  ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  ! get the variable dimensions
+  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(fieldname))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read, trim(fieldname), dim_names)
-
+  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
   start(:) = 1
   if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,3
+    do i=1,2
       call get_dimension_size(fileobj_read, trim(dim_names(i)), nread(i))
     enddo
   endif
-
+  ! read the data
+  dim_unlim_size=0
   if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,3
+    do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
       endif
     enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_3d_noDD: time level specified, but variable "//&
+    if (dim_unlim_size .LE. 0) then
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_3d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    else
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    endif
+  else
+    call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
-  ! read the data
-  call read_data(fileobj_read, trim(fieldname), data, corner=start, edge_lengths=nread)
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2685,7 +3008,7 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_le
     if (allocated(file_var_meta_noDD%var_names)) deallocate(file_var_meta_noDD%var_names)
     file_var_meta_noDD%nvars = 0
   endif
-
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_3d_noDD
 
 !> This routine calls the fms_io read_data subroutine to read 4-D non-domain-decomposed data field named "fieldname"
@@ -2703,9 +3026,9 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after read_data is called; default is .true.
-  integer :: i, dim_unlim_index
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(4) :: start, nread ! indices for first data value and number of values to read
-  character(len=40), dimension(4) :: dim_names ! variable dimension names
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   logical, optional, intent(in) :: leave_file_open !< if .true., leave file open
 
@@ -2733,10 +3056,12 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
   enddo
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_4d_noDD: "//trim(fieldname)//&
                                             " not found in "//trim(filename))
-  ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
+  ! get the variable dimensions
+  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(fieldname))
+  allocate(dim_names(num_var_dims))
   dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read, trim(fieldname), dim_names)
-
+  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
   start(:) = 1
   if (present(start_index)) start = start_index
 
@@ -2748,21 +3073,29 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
     enddo
   endif
 
+  ! read the data
+  dim_unlim_size=0
   if (present(timelevel)) then
-    dim_unlim_index=0
-    do i=1,4
+    do i=1, num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        dim_unlim_index=i
-        start(i)=timelevel
-        nread(i)=1
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
+      endif
+      if (i .eq. 4) then
+        nread(i) = 1
+        start(i) = timelevel
       endif
     enddo
-    if (dim_unlim_index .LE. 0) &
-      call MOM_error(FATAL, "MOM_io::MOM_read_data_4d_noDD: time level specified, but variable "//&
+    if (dim_unlim_size .LE. 0) then
+      call MOM_error(WARNING, "MOM_io::MOM_read_data_4d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    else
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    endif
+  else
+    call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
-  ! read the data
-  call read_data(fileobj_read, trim(fieldname), data, corner=start, edge_lengths=nread)
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
     call scale_data(data, scale)
@@ -2773,8 +3106,148 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
     if (allocated(file_var_meta_noDD%var_names)) deallocate(file_var_meta_noDD%var_names)
     file_var_meta_noDD%nvars = 0
   endif
-
+  if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_4d_noDD
+
+!> This routine calls the fms_io read_data subroutine to read 2-D domain-decomposed data field named "fieldname"
+!! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call. The supergrid variable axis lengths are determined from compute domain lengths, and 
+!! the domain indices are computed from the difference between the global and compute domain indices
+subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supergrid, start_index, edge_lengths, &
+                              timelevel, scale, x_position, y_position, leave_file_open)
+  character(len=*), intent(in) :: filename  !< The name of the file to read
+  character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
+  real, dimension(:,:), intent(inout) :: data !< The 2-dimensional data array to pass to read_data
+  type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
+  logical, intent(in) :: is_supergrid !< flag indicating whether to use supergrid
+  integer, dimension(2), optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
+  integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in.
+                                                              !! Default values are the variable dimension sizes
+  integer, optional, intent(in) :: timelevel !< time level to read
+  real, optional, intent(in):: scale !< A scaling factor that the field is multiplied by
+  integer, intent(in), optional :: x_position !< domain position of x-dimension; CENTER (default) or EAST_FACE
+  integer, intent(in), optional :: y_position !< domain position of y-dimension; CENTER (default) or NORTH_FACE
+  logical, optional, intent(in) :: leave_file_open !< if .true., leave file open
+  ! local
+  logical :: file_open_success !.true. if call to open_file is successful
+  logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
+  logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
+  integer :: i, dim_unlim_size, num_var_dims, first(2), last(2)
+  integer :: start(2), nread(2) ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
+  character(len=96) :: variable_to_read ! variable to read from the netcdf file
+  integer :: xpos, ypos, pos ! x and y domain positions
+  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
+
+  if (.not.(is_supergrid)) call MOM_read_data(filename, fieldname, data, domain, start_index, edge_lengths, &
+                                              timelevel, scale, x_position, y_position, leave_file_open)
+  xpos = CENTER
+  ypos = CENTER
+  if (present(x_position)) xpos = x_position
+  if (present(y_position)) ypos = y_position
+
+  close_the_file = .true.
+  if (present(leave_file_open)) close_the_file = .not.(leave_file_open)
+
+  ! open the file
+  if (.not.(check_if_open(fileobj_read))) then
+    ! define the io domain for 1-pe jobs because it is required to read domain-decomposed files
+    if (mpp_get_domain_npes(domain%mpp_domain) .eq. 1 ) then
+      if (.not. associated(mpp_get_io_domain(domain%mpp_domain))) &
+        call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
+    endif
+    file_open_success = fms2_open_file(fileobj_read, filename, "read", is_restart=.false.)
+    file_var_meta_DD%nvars = get_num_variables(fileobj_read)
+    if (file_var_meta_DD%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
+                                                           trim(filename))
+    if (.not.(allocated(file_var_meta_DD%var_names))) allocate(file_var_meta_DD%var_names(file_var_meta_DD%nvars))
+    call get_variable_names(fileobj_read, file_var_meta_DD%var_names)
+  endif
+  ! search for the variable in the file
+  variable_to_read = ""
+  variable_found = .false.
+  do i=1,file_var_meta_DD%nvars
+    if (lowercase(trim(file_var_meta_DD%var_names(i))) .eq. lowercase(trim(fieldname))) then
+      variable_found = .true.
+      variable_to_read = trim(file_var_meta_DD%var_names(i))
+      exit
+    endif
+  enddo
+  if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_supergrid: "//&
+      trim(fieldname)//" not found in "//trim(filename))
+  ! register the variable axes
+  !call MOM_register_variable_axes(fileobj_read, trim(variable_to_read), domain, xPosition=xpos, yPosition=ypos)
+
+  pos = CENTER
+  if (present(x_position)) then
+    if (present(y_position)) then
+      pos = CORNER
+    else
+      pos = xpos
+    endif
+  elseif (present(y_position)) then
+    pos = ypos
+  endif
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
+  dim_names(:) = ""
+  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
+  ! Get the global indicies
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  ! Get the compute indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  ! get array indices for the axis data
+  last(1) = iec - isg + 1
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
+
+  start(:) = 1
+  if (present(start_index)) then
+    start = start_index
+  else
+    start(:) = first(:)
+  endif
+
+  if (present(edge_lengths)) then
+    nread = edge_lengths
+  else
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    !do i=1,num_var_dims
+    !  call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
+    !enddo
+  endif
+  ! read the data
+  dim_unlim_size=0
+  if (present(timelevel)) then
+    do i=1,num_var_dims
+      if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
+      endif
+    enddo
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    endif
+  else
+    call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  endif
+  ! scale the data
+  if (present(scale)) then ; if (scale /= 1.0) then
+    call scale_data(data, scale)
+  endif ; endif
+  ! close the file
+  if (close_the_file) then
+    if (check_if_open(fileobj_read)) call fms2_close_file(fileobj_read)
+    if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
+    file_var_meta_DD%nvars = 0
+  endif
+  if (allocated(dim_names)) deallocate(dim_names)
+end subroutine MOM_read_data_2d_supergrid
+
 
 !> This is a kluge interface to obtain the correct x and y values used to define the diagnostic axes 
 !! lath, latq, lonh, and lonq in MOM_grid_intialize. This routine allocates a buffer of the size of the entire field in
@@ -2855,16 +3328,17 @@ subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_dia
   !! old procedures.
   if (define_diagnostic_axes) then
     allocate(tmpGlbl(nread(1),nread(2)))
-    tmpGlbl(:,:) = -999.0
+    !tmpGlbl(:,:) = -999.0
     ! read the data into the temporary array
     call read_data(fileobj_read, trim(fieldname), tmpGlbl, corner=start, edge_lengths=nread)
 
     call get_variable_units(fileobj_read, fieldname, units)
     substring_index = index(lowercase(trim(units)), "north")
 
-    if (substring_index .gt. 0) then
+    if ((substring_index .gt. 0) .or. (index(lowercase(trim(fieldname)), 'y') .gt. 0)) then
       if (.not.(present(grid_type))) call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_noDD_diag_axes: grid_type"// &
          " argument must be defined if define_diag_axes=.true. and reading in a y-axis/latitude variable")
+
       ! create a mask for the T-grid latitude values in the tmpGlbl array
       allocate(yuse(nread(2)))
       yuse(:) = .FALSE.
@@ -2910,7 +3384,7 @@ subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_dia
       deallocate(yuse)
     else
       substring_index = index(lowercase(trim(units)), "east")
-      if (substring_index .gt. 0) then
+      if ((substring_index .gt. 0) .or. (index(lowercase(trim(fieldname)), 'x') .gt. 0)) then
         ! all latitude indices contain the full range of x/longitude values required for the diagnostic axes
         data(1:nread(1),:) = tmpGlbl(:,1:size(data,2))
       else
@@ -2953,11 +3427,12 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
                                                      !! by before they are returned.
   logical, optional, intent(in) :: leave_file_open !< if .true., leave file open
   ! local
-  integer :: is, ie, js, je, i
+  integer :: is, ie, js, je, i, ndims, dim_unlim_index
   integer :: u_pos, v_pos
-  integer :: substring_index
-  integer, dimension(2) :: start, dim_sizes_u, dim_sizes_v
-  character(len=32), dimension(2) :: dim_names_u, dim_names_v, units_u, units_v
+  integer, allocatable :: dim_sizes_u(:), dim_sizes_v(:)
+  character(len=32), allocatable :: dim_names_u(:), dim_names_v(:), units_u(:), units_v(:)
+  character(len=1) :: x_or_y ! orientation of cartesian coordinate axis
+  logical :: is_valid
   logical :: file_open_success ! .true. if open file is successful
   logical :: close_the_file ! indicates whether to close the file after MOM_read_vector is called; default is .true.
 
@@ -2975,56 +3450,70 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
     elseif (stagger == AGRID) then ; u_pos = CENTER ; v_pos = CENTER ; endif
   endif
 
-  start(:) = 1
-  call get_variable_size(fileobj_read_dd, u_fieldname, dim_sizes_u, broadcast=.true.)
-  call get_variable_size(fileobj_read_dd, v_fieldname, dim_sizes_v, broadcast=.true.)
-  call get_variable_dimension_names(fileobj_read_dd, u_fieldname, dim_names_u, broadcast=.true.)
-  call get_variable_dimension_names(fileobj_read_dd, v_fieldname, dim_names_v, broadcast=.true.)
+  ndims = get_variable_num_dimensions(fileobj_read_dd, u_fieldname)
+  allocate(dim_sizes_u(ndims))
+  allocate(dim_sizes_v(ndims))
+  allocate(dim_names_u(ndims))
+  allocate(dim_names_v(ndims))
+  allocate(units_u(ndims))
+  allocate(units_v(ndims))
 
   units_u(:) = ""
   units_v(:) = ""
-  do i=1,2
-    substring_index = 0
+  dim_names_u(:) = ""
+  dim_names_v(:) = ""
+  dim_sizes_u(:) = 0
+  dim_sizes_v(:) = 0
+
+  call get_variable_size(fileobj_read_dd, u_fieldname, dim_sizes_u)
+  call get_variable_size(fileobj_read_dd, v_fieldname, dim_sizes_v)
+  call get_variable_dimension_names(fileobj_read_dd, u_fieldname, dim_names_u)
+  call get_variable_dimension_names(fileobj_read_dd, v_fieldname, dim_names_v)
+
+  do i=1,ndims
     ! register the u axes
     if (.not.(is_dimension_registered(fileobj_read_dd, dim_names_u(i)))) then
       call get_variable_units(fileobj_read_dd, dim_names_u(i), units_u(i))
-      substring_index = index(lowercase(trim(units_u(i))), "east")
-
-      if (substring_index .gt. 0) then
-        call register_axis(fileobj_read_dd, dim_names_u(i), "x", domain_position=u_pos)
+      call validate_lat_lon_units(units_u(i), x_or_y, is_valid) 
+      if (is_valid) then
+        call register_axis(fileobj_read_dd, dim_names_u(i), x_or_y, domain_position=u_pos)
       else
-        substring_index = index(lowercase(trim(units_u(i))), "north")
-        if (substring_index .gt. 0) then
-          call register_axis(fileobj_read_dd, dim_names_u(i), "y", domain_position=u_pos)
-        else
-          if (is_dimension_unlimited(fileobj_read_dd, dim_names_u(i))) then
-            if (present(timelevel)) then
-              start(i)=timelevel
-              dim_sizes_u(i) = 1
-              dim_sizes_v(i) = 1
-            endif
-            call register_axis(fileobj_read_dd, dim_names_u(i),dim_sizes_u(i))
-          endif
-        endif
+        call register_axis(fileobj_read_dd, dim_names_u(i), dim_sizes_u(i))
       endif
     endif
     ! Register the v axes if they differ from the u axes
     if (trim(lowercase(dim_names_v(i))) .ne. trim(lowercase(dim_names_u(i)))) then
       if (.not.(is_dimension_registered(fileobj_read_dd, dim_names_v(i)))) then
         call get_variable_units(fileobj_read_dd, dim_names_v(i), units_v(i))
-        substring_index = index(lowercase(trim(units_v(i))), "east")
-        if (substring_index .gt. 0) then
-          call register_axis(fileobj_read_dd, dim_names_v(i), "x", domain_position=v_pos)
+        call validate_lat_lon_units(units_v(i), x_or_y, is_valid) 
+        if (is_valid) then
+          call register_axis(fileobj_read_dd, dim_names_v(i), x_or_y, domain_position=v_pos)
         else
-          substring_index = index(lowercase(trim(units_v(i))), "north")
-          if (substring_index .gt. 0) call register_axis(fileobj_read_dd, dim_names_v(i), "y", domain_position=v_pos)
+          call register_axis(fileobj_read_dd, dim_names_v(i), dim_sizes_v(i))
         endif
       endif
     endif
   enddo
   ! read the data
-  call read_data(fileobj_read_dd, u_fieldname, u_data, corner=start, edge_lengths=dim_sizes_u)
-  call read_data(fileobj_read_dd, v_fieldname, v_data, corner=start, edge_lengths=dim_sizes_v)
+  dim_unlim_index = 0
+  if (present(timelevel)) then
+    do i=1,ndims
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names_u(i))) then
+        dim_unlim_index = i
+        exit
+      endif
+    enddo
+    if (dim_unlim_index .gt. 0) then
+      call read_data(fileobj_read_dd, u_fieldname,u_data, unlim_dim_level=timelevel)
+      call read_data(fileobj_read_dd, v_fieldname, v_data, unlim_dim_level=timelevel)
+    else
+      call read_data(fileobj_read_dd, u_fieldname, u_data)
+      call read_data(fileobj_read_dd, v_fieldname, v_data) 
+    endif
+  else
+    call read_data(fileobj_read_dd, u_fieldname, u_data)
+    call read_data(fileobj_read_dd, v_fieldname, v_data)
+  endif
   ! close the file
   if (close_the_file) then
     if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
@@ -3038,7 +3527,12 @@ subroutine MOM_read_vector_2d(filename, u_fieldname, v_fieldname, u_data, v_data
     call get_simple_array_j_ind(MOM_Domain, size(v_data,2), js, je)
     v_data(is:ie,js:je) = scale*v_data(is:ie,js:je)
   endif ; endif
-
+  if (allocated(dim_names_u)) deallocate(dim_names_u)
+  if (allocated(dim_names_v)) deallocate(dim_names_v)
+  if (allocated(dim_sizes_u)) deallocate(dim_sizes_u)
+  if (allocated(dim_sizes_v)) deallocate(dim_sizes_v)
+  if (allocated(units_u)) deallocate(units_u)
+  if (allocated(units_v)) deallocate(units_v)
 end subroutine MOM_read_vector_2d
 
 !> This routine uses the fms_io read_data interface to read a pair of distributed
@@ -3060,11 +3554,12 @@ subroutine MOM_read_vector_3d(filename, u_fieldname, v_fieldname, u_data, v_data
                                                      !! by before they are returned.
   logical, optional, intent(in) :: leave_file_open !< if .true., leave file open
   ! local
-  integer :: is, ie, js, je, i
+  integer :: is, ie, js, je, i, dim_unlim, ndims
   integer :: u_pos, v_pos
-  integer :: substring_index
-  integer, dimension(3) :: start, dim_sizes_u, dim_sizes_v
-  character(len=32), dimension(3) :: dim_names_u, dim_names_v, units_u, units_v
+  integer, allocatable :: dim_sizes_u(:), dim_sizes_v(:)
+  character(len=32), allocatable :: dim_names_u(:), dim_names_v(:), units_u(:), units_v(:)
+  character(len=1) :: x_or_y
+  logical :: is_valid
   logical :: file_open_success ! .true. if open file is successful
   logical :: close_the_file ! indicates whether to close the file after MOM_read_vector is called; default is .true.
 
@@ -3085,56 +3580,68 @@ subroutine MOM_read_vector_3d(filename, u_fieldname, v_fieldname, u_data, v_data
     elseif (stagger == AGRID) then ; u_pos = CENTER ; v_pos = CENTER ; endif
   endif
 
-  start(:) = 1
+  ndims = get_variable_num_dimensions(fileobj_read_dd, u_fieldname)
+  allocate(dim_sizes_u(ndims))
+  allocate(dim_sizes_v(ndims))
+  allocate(dim_names_u(ndims))
+  allocate(dim_names_v(ndims))
+  allocate(units_u(ndims))
+  allocate(units_v(ndims))
+
+  units_u(:) = ""
+  units_v(:) = ""
+  dim_names_u(:) = ""
+  dim_names_v(:) = ""
+
   call get_variable_size(fileobj_read_dd, u_fieldname, dim_sizes_u, broadcast=.true.)
   call get_variable_size(fileobj_read_dd, v_fieldname, dim_sizes_v, broadcast=.true.)
   call get_variable_dimension_names(fileobj_read_dd, u_fieldname, dim_names_u, broadcast=.true.)
   call get_variable_dimension_names(fileobj_read_dd, v_fieldname, dim_names_v, broadcast=.true.)
 
-  units_u(:) = ""
-  units_v(:) = ""
-  do i=1,3
-    substring_index = 0
+  do i=1,ndims
     ! register the u axes
     if (.not.(is_dimension_registered(fileobj_read_dd, dim_names_u(i)))) then
       call get_variable_units(fileobj_read_dd, dim_names_u(i), units_u(i))
-      substring_index = index(lowercase(trim(units_u(i))), "east")
-
-      if (substring_index .gt. 0) then
-        call register_axis(fileobj_read_dd, dim_names_u(i), "x", domain_position=u_pos)
+      call validate_lat_lon_units(units_u(i), x_or_y, is_valid) 
+      if (is_valid) then
+        call register_axis(fileobj_read_dd, dim_names_u(i), x_or_y, domain_position=u_pos)
       else
-        substring_index = index(lowercase(trim(units_u(i))), "north")
-        if (substring_index .gt. 0) then
-          call register_axis(fileobj_read_dd, dim_names_u(i), "y", domain_position=u_pos)
-        else
-          if (is_dimension_unlimited(fileobj_read_dd, dim_names_u(i))) then
-            if (present(timelevel)) then
-              start(i)=timelevel
-              dim_sizes_u(i) = 1
-              dim_sizes_v(i) = 1
-            endif
-            call register_axis(fileobj_read_dd, dim_names_u(i),dim_sizes_u(i))
-          endif
-        endif
+        call register_axis(fileobj_read_dd, dim_names_u(i), dim_sizes_u(i))
       endif
     endif
     ! Register the v axes if they differ from the u axes
     if (trim(lowercase(dim_names_v(i))) .ne. trim(lowercase(dim_names_u(i)))) then
       if (.not.(is_dimension_registered(fileobj_read_dd, dim_names_v(i)))) then
         call get_variable_units(fileobj_read_dd, dim_names_v(i), units_v(i))
-        substring_index = index(lowercase(trim(units_v(i))), "east")
-        if (substring_index .gt. 0) then
-          call register_axis(fileobj_read_dd, dim_names_v(i), "x", domain_position=v_pos)
+        call validate_lat_lon_units(units_v(i), x_or_y, is_valid) 
+        if (is_valid) then
+          call register_axis(fileobj_read_dd, dim_names_v(i), x_or_y, domain_position=v_pos)
         else
-          substring_index = index(lowercase(trim(units_v(i))), "north")
-          if (substring_index .gt. 0) call register_axis(fileobj_read_dd, dim_names_v(i), "y", domain_position=v_pos)
+          call register_axis(fileobj_read_dd, dim_names_v(i), dim_sizes_v(i))
         endif
       endif
     endif
   enddo
   ! read the data
-  call read_data(fileobj_read_dd, u_fieldname, u_data, corner=start, edge_lengths=dim_sizes_u)
-  call read_data(fileobj_read_dd, v_fieldname, v_data, corner=start, edge_lengths=dim_sizes_v)
+  dim_unlim = 0
+  if (present(timelevel)) then
+    do i=1,ndims
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names_u(i))) then
+        dim_unlim = i
+        exit
+      endif
+    enddo
+    if (dim_unlim .gt. 0) then
+      call read_data(fileobj_read_dd, u_fieldname, u_data, unlim_dim_level=timelevel)
+      call read_data(fileobj_read_dd, v_fieldname, v_data, unlim_dim_level=timelevel)
+    else
+      call read_data(fileobj_read_dd, u_fieldname, u_data, edge_lengths=dim_sizes_u)
+      call read_data(fileobj_read_dd, v_fieldname, v_data, edge_lengths=dim_sizes_v) 
+    endif
+  else
+    call read_data(fileobj_read_dd, u_fieldname, u_data, edge_lengths=dim_sizes_u)
+    call read_data(fileobj_read_dd, v_fieldname, v_data, edge_lengths=dim_sizes_v)
+  endif
   ! close the file
   if (close_the_file) then
     if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
@@ -3148,7 +3655,12 @@ subroutine MOM_read_vector_3d(filename, u_fieldname, v_fieldname, u_data, v_data
     call get_simple_array_j_ind(MOM_Domain, size(v_data,2), js, je)
     v_data(is:ie,js:je,:) = scale*v_data(is:ie,js:je,:)
   endif ; endif
-
+  if (allocated(dim_names_u)) deallocate(dim_names_u)
+  if (allocated(dim_names_v)) deallocate(dim_names_v)
+  if (allocated(dim_sizes_u)) deallocate(dim_sizes_u)
+  if (allocated(dim_sizes_v)) deallocate(dim_sizes_v)
+  if (allocated(units_u)) deallocate(units_u)
+  if (allocated(units_v)) deallocate(units_v)
 end subroutine MOM_read_vector_3d
 
 !> register a MOM diagnostic axis to a domain-decomposed file
@@ -3169,15 +3681,113 @@ subroutine MOM_register_diagnostic_axis(fileObj, axisName, axisLength)
   end select
 end subroutine MOM_register_diagnostic_axis
 
+!> register axes associated with a variable from a domain-decomposed netCDF file that are mapped to
+!! a sub-domain (e.g., a supergrid).
+!> \note The user must specify units for variables with longitude/x-axis and/or latitude/y-axis axes to obtain
+!! the correct domain decomposition for the data buffer.
+subroutine MOM_register_variable_axes_subdomain(fileObj, variableName, domain, xPosition, yPosition)
+  type(FmsNetcdfFile_t), intent(inout) :: fileObj !< netCDF file object returned by call to open_file
+  character(len=*), intent(in) :: variableName !< name of the variable
+  type(MOM_domain_type), intent(in) :: domain !< type that contains the mpp domain
+  integer, intent(in), optional :: xPosition !< domain position of the x-axis
+  integer, intent(in), optional :: yPosition !< domain position of the y-axi
+  ! local
+  character(len=40) :: units ! units corresponding to a specific variable dimension
+  character(len=40), allocatable, dimension(:) :: dim_names ! variable dimension names
+  integer :: i, isg, ieg, isc, iec, jsg, jeg, jsc, jec, xlen, ylen
+  integer :: ndims ! number of dimensions
+  integer :: xPos, yPos, pos ! domain positions for x and y axes. Default is CENTER
+  integer, allocatable, dimension(:) :: dimSizes ! variable dimension sizes
+
+  if (.not. check_if_open(fileObj)) call MOM_error(FATAL,"MOM_io:register_variable_axes_subdomain: The fileObj "// &
+                                                  " has not been opened. Call fms2_open_file(fileObj,...) "// &
+                                                  "before passing the fileObj argument to this function.")
+  xPos=CENTER
+  yPos=CENTER
+  if (present(xPosition)) xPos=xPosition
+  if (present(yPosition)) yPos=yPosition
+  ! get variable dimension names and lengths
+  ndims = get_variable_num_dimensions(fileObj, trim(variableName))
+  allocate(dimSizes(ndims))
+  allocate(dim_names(ndims))
+  call get_variable_size(fileObj, trim(variableName), dimSizes, broadcast=.true.)
+  call get_variable_dimension_names(fileObj, trim(variableName), dim_names)
+  ! determine the position to pass to the mpp domain calls
+  if (xPos .eq. EAST_FACE) then
+    if (yPos .eq. NORTH_FACE) then
+      pos = CORNER
+    else
+      pos = EAST_FACE
+    endif
+  elseif (yPos .eq. NORTH_FACE) then
+    pos = NORTH_FACE
+  endif
+  ! Get the lengths of the global indicies   
+  call mpp_get_compute_domain(domain%mpp_domain, xsize=xlen, ysize=ylen, position=pos)
+  ! register the axes
+  !>\note: This is not a comprehensive check for all possible supported horizontal axes associated with variables
+  !! read from netCDF files. Developers should add/remove cases as needed.
+  do i=1,ndims
+    !if (.not.(is_dimension_registered(fileObj, trim(dim_names(i))))) then
+      select case(trim(lowercase(dim_names(i))))
+        case ("grid_x_t")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case ("nx")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("nxp")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("longitude")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("long")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("lon")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("lonh")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("lonq")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("xh")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case ("grid_y_t")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case ("ny")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("nyp")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("latitude")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("lat")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("lath")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("latq")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("yh")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case default ! assumes that the axis is not domain-decomposed
+          if (.not. is_dimension_unlimited(fileObj, trim(dim_names(i)))) &
+            call MOM_error(WARNING,"MOM_register_variable_axes_subdomain: the axis "//trim(dim_names(i))//&
+              "is not included in the valid x and y dimension cases. If the code hangs, check the whether "//&
+              "an x or y axis is being registered as a non-domain-decomposed variable, "//&
+              "and add it to the accepted cases if necessary.")
+          call register_axis(fileObj, trim(dim_names(i)), dimSizes(i))
+      end select
+    !endif
+  enddo
+
+  if (allocated(dimSizes)) deallocate(dimSizes)
+  if (allocated(dim_names)) deallocate(dim_names)
+end subroutine MOM_register_variable_axes_subdomain
+
+
 !> register axes associated with a variable from a domain-decomposed netCDF file
 !> \note The user must specify units for variables with longitude/x-axis and/or latitude/y-axis axes to obtain
 !! the correct domain decomposition for the data buffer.
-subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPosition)
+subroutine MOM_register_variable_axes_full(fileObj, variableName, xPosition, yPosition)
   type(FmsNetcdfDomainFile_t), intent(inout) :: fileObj !< netCDF file object returned by call to open_file
   character(len=*), intent(in) :: variableName !< name of the variable
   integer, intent(in), optional :: xPosition !< domain position of the x-axis
   integer, intent(in), optional :: yPosition !< domain position of the y-axis
-
   ! local
   character(len=40) :: units ! units corresponding to a specific variable dimension
   character(len=40), allocatable, dimension(:) :: dim_names ! variable dimension names
@@ -3193,7 +3803,8 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
   yPos=CENTER
   if (present(xPosition)) xPos=xPosition
   if (present(yPosition)) yPos=yPosition
- ! get variable dimension names and lengths
+
+  ! get variable dimension names and lengths
   ndims = get_variable_num_dimensions(fileObj, trim(variableName))
   allocate(dimSizes(ndims))
   allocate(dim_names(ndims))
@@ -3221,6 +3832,8 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
           call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
         case("lonq")
           call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
+        case("xh")
+          call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
         case ("grid_y_t")
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
         case ("ny")
@@ -3235,7 +3848,14 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
         case("latq")
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
+        case("yh")
+          call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=xPos)
         case default ! assumes that the axis is not domain-decomposed
+          if (.not. is_dimension_unlimited(fileObj, trim(dim_names(i)))) &
+            call MOM_error(WARNING,"MOM_register_variable_axes_full: the axis "//trim(dim_names(i))//" is not "//&
+              "included in the valid x and y dimension cases. If the code hangs, check the whether "//&
+              "an x or y axis is being registered as a non-domain-decomposed variable, "//&
+              "and add it to the accepted cases if necessary.")
           call register_axis(fileObj, trim(dim_names(i)), dimSizes(i))
       end select
     endif
@@ -3243,7 +3863,9 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
 
   deallocate(dimSizes)
   deallocate(dim_names)
-end subroutine MOM_register_variable_axes
+end subroutine MOM_register_variable_axes_full
+
+!> Get the horizontal grid, vertical grid, and/or time
 
 !> Get the horizontal grid, vertical grid, and/or time dimension names and lengths
 !! for a single variable from the hor_grid, t_grid, and z_grid values returned by a prior call to query_vardesc
@@ -3509,6 +4131,31 @@ function field_exists(file_name, variable_name) result (var_exists)
   var_exists = variable_exists(fileobj, trim(variable_name))
   if (check_if_open(fileobj)) call fms2_close_file(fileobj)
 end function field_exists
+
+!> check that latitude or longitude units are valid CF-compliant values
+!! return true or false and x_or_y character value corresponding to the axis direction
+subroutine validate_lat_lon_units(unit_string, x_or_y, units_are_valid)
+character(len=*), intent(in) :: unit_string !< string of units 
+character(len=1), intent(out) :: x_or_y !< "x" for longitude or "y" latitude
+logical, intent(out) :: units_are_valid !< .true. if units match acceptable values; default is .false.
+
+select case (lowercase(trim(unit_string)))
+  case ("degrees_north"); units_are_valid = .true.; x_or_y = "y"
+  case ("degree_north"); units_are_valid = .true.; x_or_y = "y"
+  case ("degrees_n"); units_are_valid = .true.; x_or_y = "y"
+  case ("degree_n"); units_are_valid = .true.; x_or_y = "y"
+  case ("degreen"); units_are_valid = .true.; x_or_y = "y"
+  case ("degreesn"); units_are_valid = .true.; x_or_y = "y"
+  case ("degrees_east"); units_are_valid = .true.; x_or_y = "x"
+  case ("degree_east"); units_are_valid = .true.;x_or_y = "x"
+  case ("degreese"); units_are_valid = .true.; x_or_y =  "x"
+  case ("degreee"); units_are_valid = .true.; x_or_y =  "x"
+  case ("degree_e"); units_are_valid = .true.; x_or_y =  "x"
+  case ("degrees_e"); units_are_valid = .true.; x_or_y = "x"
+  case default; units_are_valid = .false.; x_or_y = ""
+end select
+
+end subroutine validate_lat_lon_units
 
 !> get the dimesion sizes of a variable
 subroutine field_size(file_name, variable_name, dim_sizes)

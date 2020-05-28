@@ -180,21 +180,17 @@ subroutine rotated_write_field_real_0d(filepath, fieldname, field_md, nc_mode, f
   character(len=*), intent(in) :: fieldname   !> name of the field to write to the file
   type(fieldtype), intent(in) :: field_md     !> FMS field metadata
   character(len=*), intent(in) :: nc_mode     !> write or append
-  real, target, intent(inout) :: field        !> Unrotated field array
+  real, intent(inout) :: field        !> Unrotated field array
   real, optional, intent(in) :: tstamp        !> Model timestamp
   integer, optional, intent(in) :: turns      !> Number of quarter-turns
   logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
-
-  real, pointer :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
 
   if (present(turns)) &
     call MOM_error(FATAL, "Rotation not supported for 0d fields.")
 
   !call write_field(io_unit, field_md, field, tstamp=tstamp)
-  data_tmp => field
-  call write_field(trim(filepath), fieldname, data_tmp, trim(nc_mode), &
+  call write_field(trim(filepath), fieldname, field, trim(nc_mode), &
                    leave_file_open=leave_file_open)
-  if (associated(data_tmp)) nullify(data_tmp)
 end subroutine rotated_write_field_real_0d
 
 
@@ -206,21 +202,17 @@ subroutine rotated_write_field_real_1d(filepath, fieldname, field_md, nc_mode, f
   character(len=*), intent(in) :: fieldname   !> name of the field to write to the file
   type(fieldtype), intent(in) :: field_md     !> FMS field metadata
   character(len=*), intent(in) :: nc_mode     !> write or append
-  real, target, intent(inout) :: field(:)             !> Unrotated field array
+  real, intent(inout) :: field(:)             !> Unrotated field array
   real, optional, intent(in) :: tstamp        !> Model timestamp
   integer, optional, intent(in) :: turns      !> Number of quarter-turns
   logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
 
-  real, pointer, dimension(:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
-
   if (present(turns)) &
     call MOM_error(FATAL, "Rotation not supported for 0d fields.")
 
-  data_tmp => field 
   !call write_field(io_unit, field_md, field, tstamp=tstamp)
-  call write_field(trim(filepath), fieldname, data_tmp, trim(nc_mode), &
+  call write_field(trim(filepath), fieldname, field, trim(nc_mode), &
                    leave_file_open=leave_file_open)
-  if (associated(data_tmp)) nullify(data_tmp)
 end subroutine rotated_write_field_real_1d
 
 
@@ -243,7 +235,8 @@ subroutine rotated_write_field_real_2d(filepath, fieldname, field_md, nc_mode, d
 
   real, allocatable, target :: field_rot(:,:)
   integer :: qturns
-  real, pointer, dimension(:,:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
+  real, pointer, dimension(:,:) :: data_tmp => null() ! enables data to be passed to the write_field
+                                                      ! subroutines as intent(inout)
 
   qturns = 0
   if (present(turns)) &
@@ -278,12 +271,16 @@ subroutine rotated_write_field_real_3d(filepath, fieldname, field_md, nc_mode, d
   !type(domain2D), intent(inout) :: domain     !> FMS MPP domain
   type(MOM_domain_type) :: domain             !> MOM domain attribute with the mpp_domain decomposition
   real, target, intent(inout) :: field(:,:,:)         !> Unrotated field array
+  real, optional, intent(in) :: tstamp        !> Model timestamp
+  integer, optional, intent(in) :: tile_count !> PEs per tile (default: 1)
+  real, optional, intent(in) :: default_data  !> Default fill value
+  integer, optional, intent(in) :: turns      !> Number of quarter-turns
   logical, optional, intent(in) :: leave_file_open !> if .true., leave the file open for more writing
 
   real, allocatable, target :: field_rot(:,:,:)
   integer :: qturns
-  real, pointer, dimension(:,:,:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
-
+  real, pointer, dimension(:,:,:) :: data_tmp => null() ! enables data to be passed to the write_field
+                                                        ! subroutines as intent(inout)
   qturns = 0
   if (present(turns)) &
     qturns = modulo(turns, 4)
@@ -325,8 +322,8 @@ subroutine rotated_write_field_real_4d(filepath, fieldname, field_md, nc_mode, d
   
   real, allocatable, target :: field_rot(:,:,:,:)
   integer :: qturns
-  real, pointer, dimension(:,:,:,:) :: data_tmp => null() ! enables data to be passed to functions as intent(inout)
-
+  real, pointer, dimension(:,:,:,:) :: data_tmp => null() ! enables data to be passed to the write_field
+                                                          ! subroutines as intent(inout)
   qturns = 0
   if (present(turns)) &
     qturns = modulo(turns, 4)

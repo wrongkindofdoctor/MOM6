@@ -640,11 +640,8 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, OBC, dt_
     endif
    endif
 
-  if (day > CS%Start_time) then
-    continue
-  else
+  if (.not. file_exists(trim(energypath_nc))) &
     call create_file(trim(energypath_nc), vars, num_nc_fields, register_time = .true., G=G, GV=GV)
-  endif
 
   if (CS%do_APE_calc) then
     lbelow = 1 ; volbelow = 0.0
@@ -923,10 +920,10 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, OBC, dt_
   call write_field(trim(energypath_nc), vars(10)%name, max_CFL(1), "append", &
                    var_desc=vars(10), time_level=reday, leave_file_open=.true.)
   if ((nTr_stocks > 0) .or. (CS%use_temperature)) then
-    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(1), "append", &
+    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(2), "append", &
                      var_desc=vars(11), time_level=reday, leave_file_open=.true.)
   else
-    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(1), "append", &
+    call write_field(trim(energypath_nc), vars(11)%name, max_CFL(2), "append", &
                      var_desc=vars(11), time_level=reday)
   endif
   if (CS%use_temperature) then
