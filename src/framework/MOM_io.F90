@@ -1984,7 +1984,7 @@ subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, num_var_dims, dim_unlim, dim_unlim_size
+  integer :: i, num_var_dims, dim_unlim_size
   integer, dimension(1) :: start, nread ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2043,23 +2043,17 @@ subroutine MOM_read_data_1d_DD(filename, fieldname, data, domain, start_index, e
     call get_dimension_size(fileobj_read_dd, trim(dim_names(1)), nread(1))
   endif
   ! read the data
-  dim_unlim = 0
   dim_unlim_size = 0
   if (present(timelevel)) then
     do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim = i
         call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
         exit
       endif
     enddo
-    if (dim_unlim .gt. 0) then
-      if (dim_unlim_size .gt. 1) then
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
-                       unlim_dim_level=timelevel)
-      else
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
-      endif
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
     else
       call MOM_error(WARNING, "MOM_io::MOM_read_data_1d_DD: time level specified, but the variable "//&
                       trim(fieldName)// " does not have an unlimited dimension.")
@@ -2101,7 +2095,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index, dim_unlim_size, num_var_dims, first(2), last(2)
+  integer :: i, dim_unlim_size, num_var_dims, first(2), last(2)
   integer :: start(2), nread(2) ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2186,26 +2180,18 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
     !enddo
   endif
   ! read the data
-  dim_unlim_index=0
   dim_unlim_size=0
   if (present(timelevel)) then
     do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim_index=i
         call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
       endif
     enddo
-    if (dim_unlim_index .LE. 0) then
-      call MOM_error(WARNING, "MOM_io::MOM_read_data_2d_DD: time level specified, but the variable "//&
-                     trim(fieldName)// " does not have an unlimited dimension.")
-      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
     else
-      if (dim_unlim_size .gt. 1) then
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
-                       unlim_dim_level=timelevel)
-      else
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
-      endif
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
     endif
   else
     call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
@@ -2243,7 +2229,7 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! if .true., the variable was found in the netCDF file
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index, dim_unlim_size, num_var_dims
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(3) :: start, nread, first, last ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2324,26 +2310,20 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
     call get_dimension_size(fileobj_read_dd, trim(dim_names(3)), nread(3))
   endif
  ! read the data
-  dim_unlim_index=0
   dim_unlim_size=0
   if (present(timelevel)) then
     do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim_index=i
         call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
       endif
     enddo
-    if (dim_unlim_index .LE. 0) then
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
       call MOM_error(WARNING, "MOM_io::MOM_read_data_3d_DD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
       call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
-    else
-      if (dim_unlim_size .gt. 1) then
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
-                       unlim_dim_level=timelevel)
-      else
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
-      endif
     endif
   else
     call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
@@ -2382,7 +2362,7 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index, dim_unlim_size, num_var_dims
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(4) :: start, nread, first, last ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2464,12 +2444,10 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
     enddo
   endif
   ! read the data
-  dim_unlim_index=0
   dim_unlim_size=0
   if (present(timelevel)) then
     do i=1, num_var_dims
       if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        dim_unlim_index=i
         call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
       endif
       if (i .eq. 4) then
@@ -2477,17 +2455,13 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
         start(i) = timelevel
       endif
     enddo
-    if (dim_unlim_index .LE. 0) then
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
       call MOM_error(WARNING, "MOM_io::MOM_read_data_4d_DD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
       call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
-    else
-      if (dim_unlim_size .gt. 1) then
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
-                       unlim_dim_level=timelevel)
-      else
-        call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
-      endif
     endif
   else
     call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
@@ -2569,7 +2543,7 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
-  integer :: i, num_var_dims, dim_unlim
+  integer :: i, num_var_dims, dim_unlim_size
   integer, dimension(1) :: start, nread ! indices for first data value and number of values to read
   character(len=40), allocatable:: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2618,15 +2592,15 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_le
     call get_dimension_size(fileobj_read, trim(dim_names(1)), nread(1))
   endif
   ! read the data
-  dim_unlim = 0
+  dim_unlim_size = 0
   if (present(timelevel)) then
     do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        dim_unlim = i
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
         exit
       endif
     enddo
-    if (dim_unlim .gt. 0) then
+    if (dim_unlim_size .gt. 0) then
       call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
                      unlim_dim_level=timelevel)
     else
@@ -2666,7 +2640,7 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index, num_var_dims
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(2) :: start, nread ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2714,16 +2688,14 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
   endif
 
   ! read the data
-  dim_unlim_index=0
+  dim_unlim_size=0
   if (present(timelevel)) then
     do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        dim_unlim_index=i
-        nread(i) = 1
-        start(i) = dim_unlim_index
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
       endif
     enddo
-    if (dim_unlim_index .LE. 0) then
+    if (dim_unlim_size .LE. 0) then
       call MOM_error(WARNING, "MOM_io::MOM_read_data_2d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
       call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
@@ -2764,7 +2736,7 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_index, num_var_dims
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(3) :: start, nread ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2810,16 +2782,14 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_le
     enddo
   endif
   ! read the data
-  dim_unlim_index=0
+  dim_unlim_size=0
   if (present(timelevel)) then
     do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        dim_unlim_index=i
-        nread(i) = 1
-        start(i) = dim_unlim_index
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
       endif
     enddo
-    if (dim_unlim_index .LE. 0) then
+    if (dim_unlim_size .LE. 0) then
       call MOM_error(WARNING, "MOM_io::MOM_read_data_3d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
       call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
@@ -2858,7 +2828,7 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after read_data is called; default is .true.
-  integer :: i, dim_unlim_index, num_var_dims
+  integer :: i, dim_unlim_size, num_var_dims
   integer, dimension(4) :: start, nread ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
@@ -2906,18 +2876,18 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
   endif
 
   ! read the data
-  dim_unlim_index=0
+  dim_unlim_size=0
   if (present(timelevel)) then
     do i=1, num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        dim_unlim_index=i
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
       endif
       if (i .eq. 4) then
         nread(i) = 1
         start(i) = timelevel
       endif
     enddo
-    if (dim_unlim_index .LE. 0) then
+    if (dim_unlim_size .LE. 0) then
       call MOM_error(WARNING, "MOM_io::MOM_read_data_4d_noDD: time level specified, but the variable "//&
                      trim(fieldName)// " does not have an unlimited dimension.")
       call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
@@ -3424,6 +3394,8 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
           call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
         case("lonq")
           call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
+        case("xh")
+          call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
         case ("grid_y_t")
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
         case ("ny")
@@ -3438,7 +3410,14 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
         case("latq")
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
+        case("yh")
+          call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=xPos)
         case default ! assumes that the axis is not domain-decomposed
+          if (.not. is_dimension_unlimited(fileObj, trim(dim_names(i)))) &
+            call MOM_error(WARNING,"MOM_register_variable_axes: the axis "//trim(dim_names(i))//" is not "//&
+              "included in the valid x and y dimension cases. If the code hangs, check the whether "//&
+              "an x or y axis is being registered as a non-domain-decomposed variable, "//&
+              "and add it to the accepted cases if necessary.")
           call register_axis(fileObj, trim(dim_names(i)), dimSizes(i))
       end select
     endif
