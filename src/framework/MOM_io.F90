@@ -110,6 +110,7 @@ public :: get_variable_size
 public :: get_variable_units
 public :: get_variable_unlimited_dimension_index
 public :: global_att_exists
+public :: is_dimension_registered
 public :: is_dimension_unlimited
 public :: MOM_get_diagnostic_axis_data
 public :: MOM_read_data
@@ -243,7 +244,7 @@ contains
 
 !> This routine opens a netcdf file in "write" or "overwrite" mode, registers the global diagnostic axes, and writes
 !! the axis data and metadata to the file
-subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, checksums)
+subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, checksums, is_restart)
   character(len=*),      intent(in)               :: filename !< full path to the netcdf file
   type(vardesc), dimension(:), intent(in)         :: vars !< structures describing the output
   integer,               intent(in)               :: numVariables !< number of variables to write to the file
@@ -258,6 +259,7 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
                                                      !! required if the new file uses any
                                                      !! vertical grid axes.
   integer(kind=8), dimension(:,:), optional, intent(in) :: checksums(:,:)  !< checksums of the variables
+  logical, optional, intent(in) :: is_restart !< indicates whether file is a restart file
 
   ! local
   type(FmsNetcdfFile_t) :: fileObjNoDD ! non-domain-decomposed netcdf file object returned by open_file
@@ -267,6 +269,7 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
   logical :: file_open_successDD, file_open_successNoDD ! true if netcdf file is opened
   logical :: one_file, domain_set ! indicates whether the file will be domain-decomposed or not
   logical :: reg_time ! register the time if .true.
+  logical :: is_restart_file
   character(len=10) :: nc_mode
   character(len=64) :: checksum_char ! checksum character array created from checksum argument
   character(len=1024) :: filename_temp
@@ -286,6 +289,8 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
     domain_set = .true. ; Domain => dG%Domain
   endif
 
+  is_restart_file = .false.
+  if (present(is_restart)) is_restart_file = is_restart
   ! append '.nc' to the file name if it is missing
   filename_temp = ""
   substring_index = 0
@@ -318,7 +323,8 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
     endif
 
     if (.not. check_if_open(fileObjDD)) &
-      file_open_successDD=fms2_open_file(fileObjDD, filename_temp, trim(nc_mode), Domain%mpp_domain, is_restart=.false.)
+      file_open_successDD=fms2_open_file(fileObjDD, filename_temp, trim(nc_mode), Domain%mpp_domain, &
+                                          is_restart=is_restart_file)
   else
     ! get the pes associated with the file.
     !>\note this is required so that only pe(1) is identified as the root pe to create the file
@@ -330,18 +336,16 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
     enddo
 
     if (.not. check_if_open(fileObjNoDD)) &
-      file_open_successNoDD=fms2_open_file(fileObjNoDD, filename_temp, trim(nc_mode), is_restart=.false., pelist=pelist)
+      file_open_successNoDD=fms2_open_file(fileObjNoDD, filename_temp, trim(nc_mode), &
+                                           is_restart=is_restart_file, pelist=pelist)
   endif
-
   ! allocate the output data variable dimension attributes
   allocate(dim_names(numVariables,4))
   dim_names(:,:) = ""
-
   ! allocate the axis data and attribute types for the file
   !> \note The user should increase the sizes of the axis and data attributes to accommodate more axes if necessary.
   allocate(axis_data_CS%axis(7))
   allocate(axis_data_CS%data(7))
-
   ! axis registration procedure for the domain-decomposed case
   if (file_open_successDD) then
     do i=1,numVariables
@@ -370,15 +374,18 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
           if (.not.(dimension_exists(fileObjDD, dim_names(i,j)))) then
 
             if (present(G)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              endif   
             elseif (present(dG)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              endif
             endif
-
-            if (present(GV)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, GV=GV)
-            endif
-
               call MOM_register_diagnostic_axis(fileObjDD, trim(dim_names(i,j)), dim_lengths(j))
           endif
           ! register the axis attributes and write the axis data to the file
@@ -442,16 +449,19 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
         ! register the variable axes to the file if they are not already registered
         if (dim_lengths(j) .gt. 0) then
           if (.not.(dimension_exists(fileObjNoDD, dim_names(i,j)))) then
-
             if (present(G)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              endif   
             elseif (present(dG)) then
-              call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              endif
             endif
-
-            if (present(GV)) &
-                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, GV=GV)
-
             call register_axis(fileObjNoDD, trim(dim_names(i,j)), dim_lengths(j))
           endif
           ! register the axis attributes and write the axis data to the file
