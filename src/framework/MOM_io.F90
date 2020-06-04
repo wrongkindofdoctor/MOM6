@@ -214,6 +214,12 @@ interface create_file
   module procedure create_file_fileobj_dd
 end interface create_file
 
+!> interface for registering axes associated with a variable to a netCDF file object 
+interface MOM_register_variable_axes
+  module procedure MOM_register_variable_axes_subdomain
+  module procedure MOM_register_variable_axes_full
+end interface MOM_register_variable_axes
+
 !>\note CAUTION: The following variables are saved by default, and are only necessary for consecutive calls to
 !! MOM_read_data or write_field with the same file name. The user should ensure that fms2_close_file on
 !! the fileobj_write_field and fileobj_read structures are called at every requisite time step at after the last
@@ -2336,7 +2342,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_DD: "//trim(fieldname)//" not found in "//&
                                             trim(filename))
   ! register the variable axes
-  call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
+  call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), domain, xPosition=xpos, yPosition=ypos)
 
   pos = CENTER
   if (present(x_position)) then
@@ -3196,9 +3202,10 @@ subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_dia
     call get_variable_units(fileobj_read, fieldname, units)
     substring_index = index(lowercase(trim(units)), "north")
 
-    if (substring_index .gt. 0) then
+    if ((substring_index .gt. 0) .or. (index(lowercase(trim(fieldname)), 'y') .gt. 0)) then
       if (.not.(present(grid_type))) call MOM_error(FATAL, "MOM_io::MOM_read_data_2d_noDD_diag_axes: grid_type"// &
          " argument must be defined if define_diag_axes=.true. and reading in a y-axis/latitude variable")
+
       ! create a mask for the T-grid latitude values in the tmpGlbl array
       allocate(yuse(nread(2)))
       yuse(:) = .FALSE.
@@ -3244,7 +3251,7 @@ subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_dia
       deallocate(yuse)
     else
       substring_index = index(lowercase(trim(units)), "east")
-      if (substring_index .gt. 0) then
+      if ((substring_index .gt. 0) .or. (index(lowercase(trim(fieldname)), 'x') .gt. 0)) then
         ! all latitude indices contain the full range of x/longitude values required for the diagnostic axes
         data(1:nread(1),:) = tmpGlbl(:,1:size(data,2))
       else
@@ -3541,15 +3548,113 @@ subroutine MOM_register_diagnostic_axis(fileObj, axisName, axisLength)
   end select
 end subroutine MOM_register_diagnostic_axis
 
+!> register axes associated with a variable from a domain-decomposed netCDF file that are mapped to
+!! a sub-domain (e.g., a supergrid).
+!> \note The user must specify units for variables with longitude/x-axis and/or latitude/y-axis axes to obtain
+!! the correct domain decomposition for the data buffer.
+subroutine MOM_register_variable_axes_subdomain(fileObj, variableName, domain, xPosition, yPosition)
+  type(FmsNetcdfDomainFile_t), intent(inout) :: fileObj !< netCDF file object returned by call to open_file
+  character(len=*), intent(in) :: variableName !< name of the variable
+  type(MOM_domain_type), intent(in) :: domain !< type that contains the mpp domain
+  integer, intent(in), optional :: xPosition !< domain position of the x-axis
+  integer, intent(in), optional :: yPosition !< domain position of the y-axi
+  ! local
+  character(len=40) :: units ! units corresponding to a specific variable dimension
+  character(len=40), allocatable, dimension(:) :: dim_names ! variable dimension names
+  integer :: i, isg, ieg, isc, iec, jsg, jeg, jsc, jec, xlen, ylen
+  integer :: ndims ! number of dimensions
+  integer :: xPos, yPos, pos ! domain positions for x and y axes. Default is CENTER
+  integer, allocatable, dimension(:) :: dimSizes ! variable dimension sizes
+
+  if (.not. check_if_open(fileObj)) call MOM_error(FATAL,"MOM_io:register_variable_axes_subdomain: The fileObj "// &
+                                                  " has not been opened. Call fms2_open_file(fileObj,...) "// &
+                                                  "before passing the fileObj argument to this function.")
+  xPos=CENTER
+  yPos=CENTER
+  if (present(xPosition)) xPos=xPosition
+  if (present(yPosition)) yPos=yPosition
+  ! get variable dimension names and lengths
+  ndims = get_variable_num_dimensions(fileObj, trim(variableName))
+  allocate(dimSizes(ndims))
+  allocate(dim_names(ndims))
+  call get_variable_size(fileObj, trim(variableName), dimSizes, broadcast=.true.)
+  call get_variable_dimension_names(fileObj, trim(variableName), dim_names)
+  ! determine the position to pass to the mpp domain calls
+  if (xPos .eq. EAST_FACE) then
+    if (yPos .eq. NORTH_FACE) then
+      pos = CORNER
+    else
+      pos = EAST_FACE
+    endif
+  elseif (yPos .eq. NORTH_FACE) then
+    pos = NORTH_FACE
+  endif
+  ! Get the lengths of the global indicies   
+  call mpp_get_global_domain(domain%mpp_domain, xsize=xlen, ysize=ylen, position=pos)
+  ! register the axes
+  !>\note: This is not a comprehensive check for all possible supported horizontal axes associated with variables
+  !! read from netCDF files. Developers should add/remove cases as needed.
+  do i=1,ndims
+    if (.not.(is_dimension_registered(fileobj, trim(dim_names(i))))) then
+      select case(trim(lowercase(dim_names(i))))
+        case ("grid_x_t")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case ("nx")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("nxp")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("longitude")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("long")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("lon")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("lonh")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("lonq")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case("xh")
+          call register_axis(fileObj, trim(dim_names(i)), xlen)
+        case ("grid_y_t")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case ("ny")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("nyp")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("latitude")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("lat")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("lath")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("latq")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case("yh")
+          call register_axis(fileObj, trim(dim_names(i)), ylen)
+        case default ! assumes that the axis is not domain-decomposed
+          if (.not. is_dimension_unlimited(fileObj, trim(dim_names(i)))) &
+            call MOM_error(WARNING,"MOM_register_variable_axes_subdomain: the axis "//trim(dim_names(i))//&
+              "is not included in the valid x and y dimension cases. If the code hangs, check the whether "//&
+              "an x or y axis is being registered as a non-domain-decomposed variable, "//&
+              "and add it to the accepted cases if necessary.")
+          call register_axis(fileObj, trim(dim_names(i)), dimSizes(i))
+      end select
+    endif
+  enddo
+
+  deallocate(dimSizes)
+  deallocate(dim_names)
+end subroutine MOM_register_variable_axes_subdomain
+
+
 !> register axes associated with a variable from a domain-decomposed netCDF file
 !> \note The user must specify units for variables with longitude/x-axis and/or latitude/y-axis axes to obtain
 !! the correct domain decomposition for the data buffer.
-subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPosition)
+subroutine MOM_register_variable_axes_full(fileObj, variableName, xPosition, yPosition)
   type(FmsNetcdfDomainFile_t), intent(inout) :: fileObj !< netCDF file object returned by call to open_file
   character(len=*), intent(in) :: variableName !< name of the variable
   integer, intent(in), optional :: xPosition !< domain position of the x-axis
   integer, intent(in), optional :: yPosition !< domain position of the y-axis
-
   ! local
   character(len=40) :: units ! units corresponding to a specific variable dimension
   character(len=40), allocatable, dimension(:) :: dim_names ! variable dimension names
@@ -3565,7 +3670,8 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
   yPos=CENTER
   if (present(xPosition)) xPos=xPosition
   if (present(yPosition)) yPos=yPosition
- ! get variable dimension names and lengths
+
+  ! get variable dimension names and lengths
   ndims = get_variable_num_dimensions(fileObj, trim(variableName))
   allocate(dimSizes(ndims))
   allocate(dim_names(ndims))
@@ -3613,7 +3719,7 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=xPos)
         case default ! assumes that the axis is not domain-decomposed
           if (.not. is_dimension_unlimited(fileObj, trim(dim_names(i)))) &
-            call MOM_error(WARNING,"MOM_register_variable_axes: the axis "//trim(dim_names(i))//" is not "//&
+            call MOM_error(WARNING,"MOM_register_variable_axes_full: the axis "//trim(dim_names(i))//" is not "//&
               "included in the valid x and y dimension cases. If the code hangs, check the whether "//&
               "an x or y axis is being registered as a non-domain-decomposed variable, "//&
               "and add it to the accepted cases if necessary.")
@@ -3624,7 +3730,9 @@ subroutine MOM_register_variable_axes(fileObj, variableName, xPosition, yPositio
 
   deallocate(dimSizes)
   deallocate(dim_names)
-end subroutine MOM_register_variable_axes
+end subroutine MOM_register_variable_axes_full
+
+!> Get the horizontal grid, vertical grid, and/or time
 
 !> Get the horizontal grid, vertical grid, and/or time dimension names and lengths
 !! for a single variable from the hor_grid, t_grid, and z_grid values returned by a prior call to query_vardesc
