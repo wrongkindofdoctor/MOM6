@@ -208,6 +208,12 @@ interface scale_data
   module procedure scale_data_1d
 end interface
 
+!> interface for creating files to write/overwrite/append to
+interface create_file
+  module procedure create_file_filename
+  module procedure create_file_fileobj_dd
+end interface create_file
+
 !>\note CAUTION: The following variables are saved by default, and are only necessary for consecutive calls to
 !! MOM_read_data or write_field with the same file name. The user should ensure that fms2_close_file on
 !! the fileobj_write_field and fileobj_read structures are called at every requisite time step at after the last
@@ -244,7 +250,7 @@ contains
 
 !> This routine opens a netcdf file in "write" or "overwrite" mode, registers the global diagnostic axes, and writes
 !! the axis data and metadata to the file
-subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, checksums, is_restart)
+subroutine create_file_filename(filename, vars, numVariables, register_time, G, DG, GV, checksums, is_restart)
   character(len=*),      intent(in)               :: filename !< full path to the netcdf file
   type(vardesc), dimension(:), intent(in)         :: vars !< structures describing the output
   integer,               intent(in)               :: numVariables !< number of variables to write to the file
@@ -503,7 +509,190 @@ subroutine create_file(filename, vars, numVariables, register_time, G, DG, GV, c
   if (allocated(pelist)) deallocate(pelist)
   nullify(Domain)
 
-end subroutine create_file
+end subroutine create_file_filename
+
+!> This routine opens a netcdf file in "write" or "overwrite" mode, registers the global diagnostic axes, and writes
+!! the axis data and metadata to the file. It returns the netcdf file object for additional writing.
+subroutine create_file_fileobj_dd(filename, fileObjDD, vars, numVariables, register_time, G, DG, GV, checksums, is_restart)
+  character(len=*),      intent(in)               :: filename !< full path to the netcdf file
+  type(FmsNetcdfDomainFile_t), intent(inout)      :: fileObjDD !< domain-decomposed netcdf file object
+                                                               !! returned by open_file
+  type(vardesc), dimension(:), intent(in)         :: vars !< structures describing the output
+  integer,               intent(in)               :: numVariables !< number of variables to write to the file
+  logical, optional, intent(in) :: register_time !< if .true., register a time dimension to the file
+  type(ocean_grid_type),   optional, intent(in) :: G !< ocean horizontal grid structure; G or dG
+                                                     !! is required if the new file uses any
+                                                     !! horizontal grid axes.
+  type(dyn_horgrid_type),  optional, intent(in) :: dG !< dynamic horizontal grid structure; G or dG
+                                                     !! is required if the new file uses any
+                                                     !! horizontal grid axes.
+  type(verticalGrid_type), optional, intent(in) :: GV !< ocean vertical grid structure, which is
+                                                     !! required if the new file uses any
+                                                     !! vertical grid axes.
+  integer(kind=8), dimension(:,:), optional, intent(in) :: checksums(:,:)  !< checksums of the variables
+  logical, optional, intent(in) :: is_restart !< indicates whether file is a restart file
+
+  ! local
+  type(axis_data_type) :: axis_data_CS ! structure for coordinate variable metadata
+  type(MOM_domain_type), pointer :: Domain => NULL()
+  logical :: file_open_successDD ! true if netcdf file is opened
+  logical :: one_file, domain_set ! indicates whether the file will be domain-decomposed or not
+  logical :: reg_time ! register the time if .true.
+  logical :: is_restart_file ! .true. if the file is a restart file
+  character(len=10) :: nc_mode
+  character(len=64) :: checksum_char ! checksum character array created from checksum argument
+  character(len=1024) :: filename_temp
+  character(len=48), allocatable, dimension(:,:) :: dim_names ! variable dimension names
+  integer :: i, is, ie, j, substring_index, total_axes
+  integer :: num_dims ! number of dimensions
+  integer :: thread ! indicates whether threading is used
+  integer, dimension(4) :: dim_lengths ! variable dimension lengths
+  integer, allocatable :: pelist(:) ! list of pes associated with the file
+  real :: time
+
+  ! determine whether the file will be domain-decomposed or not
+  domain_set=.false.
+  if (present(G)) then
+    domain_set = .true. ; Domain => G%Domain
+  elseif (present(dG)) then
+    domain_set = .true. ; Domain => dG%Domain
+  endif
+
+  is_restart_file = .false.
+  if (present(is_restart)) is_restart_file = is_restart
+  ! append '.nc' to the file name if it is missing
+  filename_temp = ""
+  substring_index = 0
+  substring_index = index(trim(filename), ".nc")
+  if (substring_index < 1) then
+    filename_temp = append_substring(filename,".nc")
+  else
+    filename_temp = filename
+  endif
+
+  nc_mode = ""
+  if (file_exists(trim(filename_temp))) then
+    nc_mode = "overwrite"
+  else
+    nc_mode = "write"
+  endif
+
+  reg_time = .false.
+  if (present(register_time)) reg_time = register_time
+  ! open the file
+  file_open_successDD=.false.
+  ! define the io domain if on one pe and the io domain is not set
+  if (domain_set) then
+    if (mpp_get_domain_npes(domain%mpp_domain) .eq. 1 ) then
+      if (.not. associated(mpp_get_io_domain(domain%mpp_domain))) &
+        call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
+    endif
+  else
+    ! get the pes associated with the file.
+    !>\note this is required so that only pe(1) is identified as the root pe to create the file
+    !! Otherwise, multiple pes may try to open the file in write (NC_NOCLOBBER) mode, leading to failure
+    allocate(pelist(mpp_npes()))
+    pelist(:) = 0
+    do i=1,size(pelist)
+      pelist(i) = i-1
+    enddo
+  endif
+  if (.not. check_if_open(fileObjDD)) &
+    file_open_successDD=fms2_open_file(fileObjDD, filename_temp, trim(nc_mode), Domain%mpp_domain, &
+                                       is_restart=is_restart_file)
+  ! allocate the output data variable dimension attributes
+  allocate(dim_names(numVariables,4))
+  dim_names(:,:) = ""
+  ! allocate the axis data and attribute types for the file
+  !> \note The user should increase the sizes of the axis and data attributes to accommodate more axes if necessary.
+  allocate(axis_data_CS%axis(7))
+  allocate(axis_data_CS%data(7))
+  ! axis registration procedure for the domain-decomposed case
+  if (file_open_successDD) then
+    do i=1,numVariables
+      num_dims=0
+      dim_lengths(:) = 0
+      !> \note The time dimension is registered separately at the end of the procedure if reg_time = .true.
+      !! so the t_grid argument in get_var_dimension_features is set to '1' (do nothing)
+      if (present(G)) then
+        call get_var_dimension_features(vars(i)%hor_grid, vars(i)%z_grid, '1', dim_names(i,:), &
+                                          dim_lengths, num_dims, G=G)
+      elseif(present(dG)) then
+        call get_var_dimension_features(vars(i)%hor_grid, vars(i)%z_grid, '1', dim_names(i,:), &
+                                          dim_lengths, num_dims, dG=dG)
+      endif
+
+      if(present(GV)) &
+        call get_var_dimension_features(vars(i)%hor_grid, vars(i)%z_grid, '1', dim_names(i,:), &
+                                        dim_lengths, num_dims, GV=GV)
+      !> \note num_dims will be 0 for scalar values
+      if (num_dims .le. 0) cycle
+
+      do j=1,num_dims
+        ! register the variable axes to the file if they are not already registered
+        if (dim_lengths(j) .gt. 0) then
+          if (.not.(dimension_exists(fileObjDD, dim_names(i,j)))) then
+
+            if (present(G)) then
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, G=G)
+              endif   
+            elseif (present(dG)) then
+              if (present(GV)) then
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG, GV=GV)
+              else
+                call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
+              endif
+            endif
+              call MOM_register_diagnostic_axis(fileObjDD, trim(dim_names(i,j)), dim_lengths(j))
+          endif
+          ! register the axis attributes and write the axis data to the file
+          if (.not.(variable_exists(fileObjDD, trim(axis_data_CS%axis(j)%name)))) then
+            if (associated(axis_data_CS%data(j)%p)) then
+
+                call register_field(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                  "double", dimensions=(/trim(axis_data_CS%axis(j)%name)/))
+
+                call register_variable_attribute(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                               'long_name', axis_data_CS%axis(j)%longname)
+
+                call register_variable_attribute(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                               'units', trim(axis_data_CS%axis(j)%units))
+
+                if (len_trim(axis_data_CS%axis(j)%positive)>1) &
+                  call register_variable_attribute(fileObjDD, trim(axis_data_CS%axis(j)%name), &
+                                                   'positive', trim(axis_data_CS%axis(j)%positive))
+
+                if (axis_data_CS%axis(j)%is_domain_decomposed) then
+                  call get_global_io_domain_indices(fileObjDD, trim(axis_data_CS%axis(j)%name), is, ie)
+                  call write_data(fileObjDD, trim(axis_data_CS%axis(j)%name), axis_data_CS%data(j)%p(is:ie))
+                else
+                  call write_data(fileObjDD, trim(axis_data_CS%axis(j)%name), axis_data_CS%data(j)%p)
+                endif
+            endif
+          endif
+        endif
+      enddo
+    enddo
+
+    if (reg_time) then
+     if (.not.(dimension_exists(fileObjDD,"Time"))) &
+       call register_axis(fileObjDD, "Time", unlimited)
+    endif
+  else
+    call MOM_error(FATAL, "MOM_io::create_file_filobj_dd: unable to open file "//trim(filename))
+  endif
+
+  deallocate(dim_names)
+  deallocate(axis_data_CS%axis)
+  deallocate(axis_data_CS%data)
+  if (allocated(pelist)) deallocate(pelist)
+  nullify(Domain)
+
+end subroutine create_file_fileobj_dd
+
 
 !> This function uses the fms_io function write_data to write a 1-D domain-decomposed data field named "fieldname"
 !! to the file "filename" in "write", "overwrite", or "append" mode. It should be called after create_file in the MOM

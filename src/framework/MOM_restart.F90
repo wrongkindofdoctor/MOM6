@@ -26,6 +26,7 @@ use mpp_domains_mod, only: mpp_get_compute_domain, mpp_get_global_domain
 use mpp_io_mod,      only :  mpp_attribute_exist, mpp_get_atts
 ! New FMS-IO interfaces
 use MOM_io, only: fms2_register_restart_field => register_restart_field, &
+                  check_if_open, &
                   is_dimension_registered, &
                   register_field, &
                   register_axis, &
@@ -1102,17 +1103,12 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV)
     endif
     ! create the file and register and write the global axes to the file
     if (present(GV)) then
-      call create_file(trim(restartpath), CS%restart_field%vars, CS%novars, register_time=.true., G=G, &
-                       GV=GV, is_restart=.true.)
+      call create_file(trim(restartpath), fileObjWrite, CS%restart_field%vars, CS%novars, register_time=.true., &
+                        G=G, GV=GV, is_restart=.true.)
     else
-      call create_file(trim(restartpath), CS%restart_field%vars, CS%novars, register_time=.true., G=G, &
-                       is_restart=.true.)
+      call create_file(trim(restartpath), fileObjWrite, CS%restart_field%vars, CS%novars, register_time=.true., &
+                       G=G, is_restart=.true.)
     endif
-    ! open the netCDF file to append the variable fields to the file
-    fileOpenSuccess = fms2_open_file(fileObjWrite, trim(restartpath), "append", &
-                                G%Domain%mpp_domain, is_restart=.true.)
-    if (.not.(fileOpenSuccess)) &
-      call MOM_error(FATAL, "MOM_restart::save_restart: unable to open the file "//trim(base_file_name))
     ! register the time data
     if (.not. variable_exists(fileObjWrite, "Time")) then
       call register_field(fileObjWrite, "Time", "double", dimensions=(/"Time"/))
@@ -1211,7 +1207,8 @@ subroutine save_restart(directory, time, G, CS, time_stamped, filename, GV)
     call write_data(fileObjWrite, "Time", (/restart_time/))
     ! write the restart file
     call write_restart(fileObjWrite)
-    call fms2_close_file(fileObjWrite)
+    ! close the file
+    if (check_if_open(fileObjWrite)) call fms2_close_file(fileObjWrite)
 
     if (associated(axis_data_CS%axis)) deallocate(axis_data_CS%axis)
     if (associated(axis_data_CS%data)) deallocate(axis_data_CS%data)
@@ -1258,7 +1255,6 @@ subroutine write_initial_conditions(directory, filename, CS, G, time, GV)
     if (.not. associated(mpp_get_io_domain(G%domain%mpp_domain))) &
       call mpp_define_io_domain(G%domain%mpp_domain, (/1,1/))
   endif
-
   ! append '.nc' to the restart file name if it is missing
   ! \todo: require users to specify full file path including the file name appendix
   ! in calls to open_file
@@ -1274,16 +1270,16 @@ subroutine write_initial_conditions(directory, filename, CS, G, time, GV)
   time_units = get_time_units(ic_time*86400.0)
   ! create the file and register and write the global axes to the file
   if (present(GV)) then
-    call create_file(trim(base_file_name), CS%restart_field%vars, CS%novars, register_time=.true., G=G, &
-                     GV=GV)
+    call create_file(trim(base_file_name), fileObjWrite, CS%restart_field%vars, CS%novars, register_time=.true., &
+                     G=G, GV=GV)
   else
-    call create_file(trim(base_file_name), CS%restart_field%vars, CS%novars, register_time=.true., G=G)
+    call create_file(trim(base_file_name), fileObjWrite, CS%restart_field%vars, CS%novars, register_time=.true., G=G)
   endif
-  ! open the netCDF file to append the variable fields to the file
-  fileOpenSuccess = fms2_open_file(fileObjWrite, trim(base_file_name), "append", &
-                              G%Domain%mpp_domain, is_restart=.false.)
-  if (.not.(fileOpenSuccess)) &
-     call MOM_error(FATAL,"MOM_restart::write_initial_conditions: could not open the file "//trim(base_file_name))
+  ! register the time data
+  if (.not. variable_exists(fileObjWrite, "Time")) then
+    call register_field(fileObjWrite, "Time", "double", dimensions=(/"Time"/))
+    call register_variable_attribute(fileObjWrite, "Time", "units", time_units)
+  endif
   ! allocate position indices for x- and y-dimensions associated with variables
   allocate(pos(CS%novars))
   allocate(first(CS%novars,2)); allocate(last(CS%novars,2));
@@ -1314,20 +1310,16 @@ subroutine write_initial_conditions(directory, filename, CS, G, time, GV)
       case ('1') ; pos(m) = 0
       case default ; pos(m)= 0
     end select
-    call mpp_get_global_domain(G%domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, &
-                               position=pos(m)) ! Get the global indicies
-    call mpp_get_compute_domain(G%domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, &
-                                position=pos(m)) ! Get the compute indicies
-    last(m,1) = iec - isg + 1 ! get array indices for the axis data
-    last(m,2) = jec - jsg + 1
-    first(m,1) = isc - isg + 1
-    first(m,2) = jsc - jsg + 1
+    !call mpp_get_global_domain(G%domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, &
+    !                           position=pos(m)) ! Get the global indicies
+    !!call mpp_get_compute_domain(G%domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, &
+    !                            position=pos(m)) ! Get the compute indicies
+    !last(m,1) = iec - isg + 1 ! get array indices for the axis data
+    !last(m,2) = jec - jsg + 1
+    !first(m,1) = isc - isg + 1
+    !first(m,2) = jsc - jsg + 1
 
-    ! register the horizontal diagnostic axes associated with the variable
-    do i=1,num_dims
-      if (.not.(is_dimension_registered(fileobjWrite, trim(dim_names(i))))) &
-        call MOM_register_diagnostic_axis(fileobjWrite, trim(dim_names(i)), dim_lengths(i))
-    enddo
+    ! register the variables
     if (associated(CS%var_ptr3d(m)%p)) then
       call register_field(fileObjWrite, CS%restart_field(m)%var_name, "double", &
                               dimensions=dim_names(1:num_dims))
@@ -1350,31 +1342,28 @@ subroutine write_initial_conditions(directory, filename, CS, G, time, GV)
     call register_variable_attribute(fileObjWrite, CS%restart_field(m)%var_name, "units", units)
     call register_variable_attribute(fileObjWrite, CS%restart_field(m)%var_name, "long_name", longname)
   enddo
-  ! register the time data
-  if (.not. variable_exists(fileObjWrite, "Time")) then
-    call register_field(fileObjWrite, "Time", "double", dimensions=(/"Time"/))
-    call register_variable_attribute(fileObjWrite, "Time", "units", time_units)
-  endif
-  ! write the data
-  call write_data(fileObjWrite, "Time", (/ic_time/))
 
   do m=1,CS%novars
     if (associated(CS%var_ptr3d(m)%p)) then
-      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr3d(m)%p(first(m,1):last(m,1),first(m,2):last(m,2),:), unlim_dim_level=1)
+      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr3d(m)%p, &
+                      unlim_dim_level=1)
     elseif (associated(CS%var_ptr2d(m)%p)) then
-      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr2d(m)%p(first(m,1):last(m,1),first(m,2):last(m,2)), &
+      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr2d(m)%p, &
                       unlim_dim_level=1)
     elseif (associated(CS%var_ptr4d(m)%p)) then
-      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr4d(m)%p(first(m,1):last(m,1),first(m,2):last(m,2),:, :), &
+      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr4d(m)%p, &
                       unlim_dim_level=1)
     elseif (associated(CS%var_ptr1d(m)%p)) then
-      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr1d(m)%p, unlim_dim_level=1)
+      call write_data(fileObjWrite, CS%restart_field(m)%var_name, CS%var_ptr1d(m)%p, &
+                      unlim_dim_level=1)
     elseif (associated(CS%var_ptr0d(m)%p)) then
       call write_data(fileObjWrite, CS%restart_field(m)%var_name,CS%var_ptr0d(m)%p)
     endif
   enddo
+  ! write the time data
+  call write_data(fileObjWrite, "Time", (/ic_time/))
   ! close the IC file and deallocate the allocatable arrays
-  call fms2_close_file(fileObjWrite)
+  if(check_if_open(fileObjWrite)) call fms2_close_file(fileObjWrite)
 
   if (associated(axis_data_CS%axis)) deallocate(axis_data_CS%axis)
   if (associated(axis_data_CS%data)) deallocate(axis_data_CS%data)
