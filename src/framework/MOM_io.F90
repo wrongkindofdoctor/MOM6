@@ -179,6 +179,7 @@ interface MOM_read_data
   module procedure MOM_read_data_2d_noDD
   module procedure MOM_read_data_1d_noDD
   module procedure MOM_read_data_2d_noDD_diag_axes
+  module procedure MOM_read_data_2d_supergrid
 end interface
 
 !> Read a pair of data fields representing the two components of a vector from a netcdf file
@@ -2342,7 +2343,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_DD: "//trim(fieldname)//" not found in "//&
                                             trim(filename))
   ! register the variable axes
-  call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), domain, xPosition=xpos, yPosition=ypos)
+  call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), xPosition=xpos, yPosition=ypos)
 
   pos = CENTER
   if (present(x_position)) then
@@ -2354,35 +2355,27 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   elseif (present(y_position)) then
     pos = ypos
   endif
-
   ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
   num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
   allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
 
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
-  last(1) = iec - isg + 1 ! get array indices for the axis data
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
-
   start(:) = 1
   if (present(start_index)) then
     start = start_index
-  else
-    start(:) = first(:)
+  !else
+  !  start(:) = first(:)
   endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    nread(1) = last(1) - first(1) + 1
-    nread(2) = last(2) - first(2) + 1
-    !do i=1,num_var_dims
-    !  call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    !enddo
+    !nread(1) = last(1) - first(1) + 1
+    !nread(2) = last(2) - first(2) + 1
+    do i=1,num_var_dims
+      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
+    enddo
   endif
   ! read the data
   dim_unlim_size=0
@@ -3116,6 +3109,146 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
   if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_4d_noDD
 
+!> This routine calls the fms_io read_data subroutine to read 2-D domain-decomposed data field named "fieldname"
+!! from file "filename". The routine multiplies the data by "scale" if the optional argument is included in the call. The supergrid variable axis lengths are determined from compute domain lengths, and 
+!! the domain indices are computed from the difference between the global and compute domain indices
+subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supergrid, start_index, edge_lengths, &
+                              timelevel, scale, x_position, y_position, leave_file_open)
+  character(len=*), intent(in) :: filename  !< The name of the file to read
+  character(len=*), intent(in) :: fieldname !< The variable name of the data in the file
+  real, dimension(:,:), intent(inout) :: data !< The 2-dimensional data array to pass to read_data
+  type(MOM_domain_type), intent(in) :: domain !< MOM domain attribute with the mpp_domain decomposition
+  logical, intent(in) :: is_supergrid !< flag indicating whether to use supergrid
+  integer, dimension(2), optional, intent(in) :: start_index !< starting indices of data buffer. Default is 1
+  integer, dimension(2), optional, intent(in) :: edge_lengths !< number of data values to read in.
+                                                              !! Default values are the variable dimension sizes
+  integer, optional, intent(in) :: timelevel !< time level to read
+  real, optional, intent(in):: scale !< A scaling factor that the field is multiplied by
+  integer, intent(in), optional :: x_position !< domain position of x-dimension; CENTER (default) or EAST_FACE
+  integer, intent(in), optional :: y_position !< domain position of y-dimension; CENTER (default) or NORTH_FACE
+  logical, optional, intent(in) :: leave_file_open !< if .true., leave file open
+  ! local
+  logical :: file_open_success !.true. if call to open_file is successful
+  logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
+  logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
+  integer :: i, dim_unlim_size, num_var_dims, first(2), last(2)
+  integer :: start(2), nread(2) ! indices for first data value and number of values to read
+  character(len=40), allocatable :: dim_names(:) ! variable dimension names
+  character(len=96) :: variable_to_read ! variable to read from the netcdf file
+  integer :: xpos, ypos, pos ! x and y domain positions
+  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
+
+  if (.not.(is_supergrid)) call MOM_read_data(filename, fieldname, data, domain, start_index, edge_lengths, &
+                                              timelevel, scale, x_position, y_position, leave_file_open)
+  xpos = CENTER
+  ypos = CENTER
+  if (present(x_position)) xpos = x_position
+  if (present(y_position)) ypos = y_position
+
+  close_the_file = .true.
+  if (present(leave_file_open)) close_the_file = .not.(leave_file_open)
+
+  ! open the file
+  if (.not.(check_if_open(fileobj_read_dd))) then
+    ! define the io domain for 1-pe jobs because it is required to read domain-decomposed files
+    if (mpp_get_domain_npes(domain%mpp_domain) .eq. 1 ) then
+      if (.not. associated(mpp_get_io_domain(domain%mpp_domain))) &
+        call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
+    endif
+    file_open_success = fms2_open_file(fileobj_read_dd, filename, "read", domain%mpp_domain, is_restart=.false.)
+    file_var_meta_DD%nvars = get_num_variables(fileobj_read_dd)
+    if (file_var_meta_DD%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
+                                                           trim(filename))
+    if (.not.(allocated(file_var_meta_DD%var_names))) allocate(file_var_meta_DD%var_names(file_var_meta_DD%nvars))
+    call get_variable_names(fileobj_read_dd, file_var_meta_DD%var_names)
+  endif
+  ! search for the variable in the file
+  variable_to_read = ""
+  variable_found = .false.
+  do i=1,file_var_meta_DD%nvars
+    if (lowercase(trim(file_var_meta_DD%var_names(i))) .eq. lowercase(trim(fieldname))) then
+      variable_found = .true.
+      variable_to_read = trim(file_var_meta_DD%var_names(i))
+      exit
+    endif
+  enddo
+  if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_supergrid: "//&
+      trim(fieldname)//" not found in "//trim(filename))
+  ! register the variable axes
+  call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), domain, xPosition=xpos, yPosition=ypos)
+
+  pos = CENTER
+  if (present(x_position)) then
+    if (present(y_position)) then
+      pos = CORNER
+    else
+      pos = xpos
+    endif
+  elseif (present(y_position)) then
+    pos = ypos
+  endif
+  ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  allocate(dim_names(num_var_dims))
+  dim_names(:) = ""
+  call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
+  ! Get the global indicies
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  ! Get the compute indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  ! get array indices for the axis data
+  last(1) = iec - isg + 1
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
+
+  start(:) = 1
+  if (present(start_index)) then
+    start = start_index
+  else
+    start(:) = first(:)
+  endif
+
+  if (present(edge_lengths)) then
+    nread = edge_lengths
+  else
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    !do i=1,num_var_dims
+    !  call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
+    !enddo
+  endif
+  ! read the data
+  dim_unlim_size=0
+  if (present(timelevel)) then
+    do i=1,num_var_dims
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
+        call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
+      endif
+    enddo
+    if (dim_unlim_size .gt. 0) then
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+                     unlim_dim_level=timelevel)
+    else
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    endif
+  else
+    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+  endif
+  ! scale the data
+  if (present(scale)) then ; if (scale /= 1.0) then
+    call scale_data(data, scale)
+  endif ; endif
+  ! close the file
+  if (close_the_file) then
+    if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
+    if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
+    file_var_meta_DD%nvars = 0
+  endif
+  if (allocated(dim_names)) deallocate(dim_names)
+end subroutine MOM_read_data_2d_supergrid
+
+
 !> This is a kluge interface to obtain the correct x and y values used to define the diagnostic axes 
 !! lath, latq, lonh, and lonq in MOM_grid_intialize. This routine allocates a buffer of the size of the entire field in
 !! the input file. If reading in 'y' (latitude), a mask is created to read in a subset of supergrid points using the
@@ -3195,7 +3328,7 @@ subroutine MOM_read_data_2d_noDD_diag_axes(filename, fieldname, data, define_dia
   !! old procedures.
   if (define_diagnostic_axes) then
     allocate(tmpGlbl(nread(1),nread(2)))
-    tmpGlbl(:,:) = -999.0
+    !tmpGlbl(:,:) = -999.0
     ! read the data into the temporary array
     call read_data(fileobj_read, trim(fieldname), tmpGlbl, corner=start, edge_lengths=nread)
 
