@@ -3149,33 +3149,33 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   if (present(leave_file_open)) close_the_file = .not.(leave_file_open)
 
   ! open the file
-  if (.not.(check_if_open(fileobj_read_dd))) then
+  if (.not.(check_if_open(fileobj_read))) then
     ! define the io domain for 1-pe jobs because it is required to read domain-decomposed files
     if (mpp_get_domain_npes(domain%mpp_domain) .eq. 1 ) then
       if (.not. associated(mpp_get_io_domain(domain%mpp_domain))) &
         call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
     endif
-    file_open_success = fms2_open_file(fileobj_read_dd, filename, "read", domain%mpp_domain, is_restart=.false.)
-    file_var_meta_DD%nvars = get_num_variables(fileobj_read_dd)
-    if (file_var_meta_DD%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
+    file_open_success = fms2_open_file(fileobj_read, filename, "read", domain%mpp_domain, is_restart=.false.)
+    file_var_meta%nvars = get_num_variables(fileobj_read)
+    if (file_var_meta%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
                                                            trim(filename))
-    if (.not.(allocated(file_var_meta_DD%var_names))) allocate(file_var_meta_DD%var_names(file_var_meta_DD%nvars))
-    call get_variable_names(fileobj_read_dd, file_var_meta_DD%var_names)
+    if (.not.(allocated(file_var_meta%var_names))) allocate(file_var_meta%var_names(file_var_meta%nvars))
+    call get_variable_names(fileobj_read, file_var_meta%var_names)
   endif
   ! search for the variable in the file
   variable_to_read = ""
   variable_found = .false.
-  do i=1,file_var_meta_DD%nvars
-    if (lowercase(trim(file_var_meta_DD%var_names(i))) .eq. lowercase(trim(fieldname))) then
+  do i=1,file_var_meta%nvars
+    if (lowercase(trim(file_var_meta%var_names(i))) .eq. lowercase(trim(fieldname))) then
       variable_found = .true.
-      variable_to_read = trim(file_var_meta_DD%var_names(i))
+      variable_to_read = trim(file_var_meta%var_names(i))
       exit
     endif
   enddo
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_supergrid: "//&
       trim(fieldname)//" not found in "//trim(filename))
   ! register the variable axes
-  call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), domain, xPosition=xpos, yPosition=ypos)
+  !call MOM_register_variable_axes(fileobj_read_dd, trim(variable_to_read), domain, xPosition=xpos, yPosition=ypos)
 
   pos = CENTER
   if (present(x_position)) then
@@ -3188,10 +3188,10 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
     pos = ypos
   endif
   ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
-  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
+  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(variable_to_read))
   allocate(dim_names(num_var_dims))
   dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
+  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
   ! Get the global indicies
   call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
   ! Get the compute indicies
@@ -3215,25 +3215,25 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
     nread(1) = last(1) - first(1) + 1
     nread(2) = last(2) - first(2) + 1
     !do i=1,num_var_dims
-    !  call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
+    !  call get_dimension_size(fileobj_read, trim(dim_names(i)), nread(i))
     !enddo
   endif
   ! read the data
   dim_unlim_size=0
   if (present(timelevel)) then
     do i=1,num_var_dims
-      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
-        call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
+      if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
+        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
       endif
     enddo
     if (dim_unlim_size .gt. 0) then
-      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
                      unlim_dim_level=timelevel)
     else
-      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
     endif
   else
-    call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
   endif
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
@@ -3241,9 +3241,9 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   endif ; endif
   ! close the file
   if (close_the_file) then
-    if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
-    if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
-    file_var_meta_DD%nvars = 0
+    if (check_if_open(fileobj_read)) call fms2_close_file(fileobj_read)
+    if (allocated(file_var_meta%var_names)) deallocate(file_var_meta_DD%var_names)
+    file_var_meta%nvars = 0
   endif
   if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_2d_supergrid
