@@ -272,7 +272,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! Read X from the supergrid. \note: tmpZ is defined on the data domain
   tmpZ(:,:) = 999.
-  call MOM_read_data(filename, 'x', tmpZ, SGdom, is_supergrid=.true., &
+  call MOM_read_data(filename, 'x', tmpZ, SGdom, &
                      x_position=EAST_FACE, y_position=NORTH_FACE, leave_file_open=.true.)
 
   if (lon_bug) then
@@ -298,7 +298,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! Read Y from the supergrid
   tmpZ(:,:) = 999.
-  call MOM_read_data(filename, 'y', tmpZ, SGdom, is_supergrid=.true., &
+  call MOM_read_data(filename, 'y', tmpZ, SGdom, &
                      x_position=EAST_FACE, y_position=NORTH_FACE, leave_file_open=.true.)
 
   call pass_var(tmpZ, SGdom, position=CORNER)
@@ -318,8 +318,8 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! Read DX,DY from the supergrid
   tmpU(:,:) = 0. ; tmpV(:,:) = 0.
-  call MOM_read_data(filename,'dx',tmpV,SGdom, is_supergrid=.true., y_position=NORTH_FACE, leave_file_open=.true.)
-  call MOM_read_data(filename,'dy',tmpU,SGdom, is_supergrid=.true., x_position=EAST_FACE, leave_file_open=.true.)
+  call MOM_read_data(filename,'dx',tmpV,SGdom,  y_position=NORTH_FACE, leave_file_open=.true.)
+  call MOM_read_data(filename,'dy',tmpU,SGdom,  x_position=EAST_FACE, leave_file_open=.true.)
   call pass_vector(tmpU, tmpV, SGdom, To_All+Scalar_Pair, CGRID_NE)
   call extrapolate_metric(tmpV, 2*(G%jsc-G%jsd)+2, missing=0.)
   call extrapolate_metric(tmpU, 2*(G%jsc-G%jsd)+2, missing=0.)
@@ -346,7 +346,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
 
   ! Read AREA from the supergrid
   tmpT(:,:) = 0.
-  call MOM_read_data(filename, 'area', tmpT, SGdom, is_supergrid=.true.)
+  call MOM_read_data(filename, 'area', tmpT, SGdom)
   call pass_var(tmpT, SGdom)
   call extrapolate_metric(tmpT, 2*(G%jsc-G%jsd)+2, missing=0.)
 

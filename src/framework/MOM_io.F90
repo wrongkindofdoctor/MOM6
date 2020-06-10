@@ -397,6 +397,8 @@ subroutine create_file_filename(filename, vars, numVariables, register_time, G, 
               else
                 call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
               endif
+            elseif (present(GV)) then
+               call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, GV=GV)
             endif
               call MOM_register_diagnostic_axis(fileObjDD, trim(dim_names(i,j)), dim_lengths(j))
           endif
@@ -473,6 +475,8 @@ subroutine create_file_filename(filename, vars, numVariables, register_time, G, 
               else
                 call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
               endif
+            elseif (present(GV)) then
+               call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, GV=GV)
             endif
             call register_axis(fileObjNoDD, trim(dim_names(i,j)), dim_lengths(j))
           endif
@@ -651,6 +655,8 @@ subroutine create_file_fileobj_dd(filename, fileObjDD, vars, numVariables, regis
               else
                 call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, dG=dG)
               endif
+            elseif (present(GV)) then
+               call MOM_get_diagnostic_axis_data(axis_data_CS, dim_names(i,j), j, GV=GV)
             endif
               call MOM_register_diagnostic_axis(fileObjDD, trim(dim_names(i,j)), dim_lengths(j))
           endif
@@ -3155,19 +3161,20 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
         call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
     endif
     file_open_success = fms2_open_file(fileobj_read, filename, "read", is_restart=.false.)
-    file_var_meta%nvars = get_num_variables(fileobj_read)
-    if (file_var_meta%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
+    file_var_meta_noDD%nvars = get_num_variables(fileobj_read)
+    if (file_var_meta_noDD%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
                                                            trim(filename))
-    if (.not.(allocated(file_var_meta%var_names))) allocate(file_var_meta%var_names(file_var_meta%nvars))
-    call get_variable_names(fileobj_read, file_var_meta%var_names)
+    if (.not.(allocated(file_var_meta_noDD%var_names))) &
+      allocate(file_var_meta_noDD%var_names(file_var_meta_noDD%nvars))
+    call get_variable_names(fileobj_read, file_var_meta_noDD%var_names)
   endif
   ! search for the variable in the file
   variable_to_read = ""
   variable_found = .false.
-  do i=1,file_var_meta%nvars
-    if (lowercase(trim(file_var_meta%var_names(i))) .eq. lowercase(trim(fieldname))) then
+  do i=1,file_var_meta_noDD%nvars
+    if (lowercase(trim(file_var_meta_noDD%var_names(i))) .eq. lowercase(trim(fieldname))) then
       variable_found = .true.
-      variable_to_read = trim(file_var_meta%var_names(i))
+      variable_to_read = trim(file_var_meta_noDD%var_names(i))
       exit
     endif
   enddo
@@ -3241,8 +3248,8 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   ! close the file
   if (close_the_file) then
     if (check_if_open(fileobj_read)) call fms2_close_file(fileobj_read)
-    if (allocated(file_var_meta%var_names)) deallocate(file_var_meta%var_names)
-    file_var_meta%nvars = 0
+    if (allocated(file_var_meta_noDD%var_names)) deallocate(file_var_meta_noDD%var_names)
+    file_var_meta_noDD%nvars = 0
   endif
   if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_2d_supergrid
