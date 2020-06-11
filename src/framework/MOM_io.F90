@@ -2312,6 +2312,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
   integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
+  type(domain2D), pointer :: io_domain => NULL()
 
   xpos = CENTER
   ypos = CENTER
@@ -2420,6 +2421,7 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
     file_var_meta_DD%nvars = 0
   endif
   if (allocated(dim_names)) deallocate(dim_names)
+  if (associated(io_domain)) nullify(io_domain)
 end subroutine MOM_read_data_2d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 3-D domain-decomposed data field named "fieldname"
