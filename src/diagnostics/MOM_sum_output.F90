@@ -638,10 +638,13 @@ subroutine write_energy(u, v, h, tv, day, n, G, GV, US, CS, tracer_CSp, OBC, dt_
         endif
       endif
     endif
-   endif
 
-  if (.not. file_exists(trim(energypath_nc))) &
-    call create_file(trim(energypath_nc), vars, num_nc_fields, register_time = .true., G=G, GV=GV)
+    if (day > CS%Start_time) then
+      continue
+    else
+      call create_file(trim(energypath_nc), vars, num_nc_fields, register_time = .true., G=G, GV=GV)
+    endif
+  endif
 
   if (CS%do_APE_calc) then
     lbelow = 1 ; volbelow = 0.0

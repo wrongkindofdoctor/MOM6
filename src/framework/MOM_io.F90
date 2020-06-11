@@ -2365,22 +2365,32 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
+  ! get the IO domain
+  io_domain => mpp_get_io_domain(domain%mpp_domain)
+  ! Get the global indicies
+  call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  ! Get the compute indicies
+  call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  last(1) = iec - isg + 1 ! get array indices for the axis data
+  last(2) = jec - jsg + 1
+  first(1) = isc - isg + 1
+  first(2) = jsc - jsg + 1
 
   start(:) = 1
   if (present(start_index)) then
     start = start_index
-  !else
-  !  start(:) = first(:)
+  else
+    start(:) = first(:)
   endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    !nread(1) = last(1) - first(1) + 1
-    !nread(2) = last(2) - first(2) + 1
-    do i=1,num_var_dims
-      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    enddo
+    nread(1) = last(1) - first(1) + 1
+    nread(2) = last(2) - first(2) + 1
+    !do i=1,num_var_dims
+    !  call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
+    !enddo
   endif
   ! read the data
   dim_unlim_size=0
@@ -2438,6 +2448,7 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
   integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
+  type(domain2D), pointer :: io_domain => NULL()
 
   xpos = CENTER
   ypos = CENTER
@@ -2484,15 +2495,17 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
   elseif (present(y_position)) then
     pos = ypos
   endif
-
   ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
   num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
   allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
-
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
+  ! get the IO domain
+  io_domain => mpp_get_io_domain(domain%mpp_domain)
+  ! Get the global indicies
+  call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  ! Get the compute indicies
+  call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
   last(1) = iec - isg + 1 ! get array indices for the axis data
   last(2) = jec - jsg + 1
   first(1) = isc - isg + 1
@@ -2511,6 +2524,7 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
     nread(1) = last(1) - first(1) + 1
     nread(2) = last(2) - first(2) + 1
     call get_dimension_size(fileobj_read_dd, trim(dim_names(3)), nread(3))
+    !nread = shape(data)
   endif
  ! read the data
   dim_unlim_size=0
@@ -2543,6 +2557,7 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
   endif
 
   if (allocated(dim_names)) deallocate(dim_names)
+  if (associated(io_domain)) nullify(io_domain)
 end subroutine MOM_read_data_3d_DD
 
 !> This routine calls the fms_io read_data subroutine to read 4-D domain-decomposed data field named "fieldname"
@@ -2571,6 +2586,7 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
   integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
+  type(domain2D), pointer :: io_domain => NULL()
 
   xpos = CENTER
   ypos = CENTER
@@ -2622,9 +2638,12 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
-
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
+  ! get the IO domain
+  io_domain => mpp_get_io_domain(domain%mpp_domain)
+  ! Get the global indicies
+  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  ! Get the compute indicies
+  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
   last(1) = iec - isg + 1 ! get array indices for the axis data
   last(2) = jec - jsg + 1
   first(1) = isc - isg + 1
@@ -2679,6 +2698,7 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
      if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
     file_var_meta_DD%nvars = 0
   endif
+  if (associated(io_domain)) nullify(io_domain)
   if (allocated(dim_names)) deallocate(dim_names)
 end subroutine MOM_read_data_4d_DD
 
