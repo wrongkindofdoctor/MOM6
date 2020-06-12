@@ -3164,6 +3164,7 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
   integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
+  type(domain2D), pointer :: io_domain => NULL()
 
   if (.not.(is_supergrid)) call MOM_read_data(filename, fieldname, data, domain, start_index, edge_lengths, &
                                               timelevel, scale, x_position, y_position, leave_file_open)
@@ -3202,8 +3203,6 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   enddo
   if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_supergrid: "//&
       trim(fieldname)//" not found in "//trim(filename))
-  ! register the variable axes
-  !call MOM_register_variable_axes(fileobj_read, trim(variable_to_read), domain, xPosition=xpos, yPosition=ypos)
 
   pos = CENTER
   if (present(x_position)) then
@@ -3220,10 +3219,14 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   allocate(dim_names(num_var_dims))
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
+  ! get the IO domain
+  io_domain => mpp_get_io_domain(domain%mpp_domain)
+  ! register the variable axes
+  call MOM_register_variable_axes(fileobj_read, trim(variable_to_read), io_domain, xPosition=xpos, yPosition=ypos) 
   ! Get the global indicies
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
   ! Get the compute indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
   ! get array indices for the axis data
   last(1) = iec - isg + 1
   last(2) = jec - jsg + 1
@@ -3274,6 +3277,7 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
     file_var_meta_noDD%nvars = 0
   endif
   if (allocated(dim_names)) deallocate(dim_names)
+  if (associated(io_domain)) nullify(io_domain)
 end subroutine MOM_read_data_2d_supergrid
 
 
@@ -3713,10 +3717,10 @@ end subroutine MOM_register_diagnostic_axis
 !! a sub-domain (e.g., a supergrid).
 !> \note The user must specify units for variables with longitude/x-axis and/or latitude/y-axis axes to obtain
 !! the correct domain decomposition for the data buffer.
-subroutine MOM_register_variable_axes_subdomain(fileObj, variableName, domain, xPosition, yPosition)
+subroutine MOM_register_variable_axes_subdomain(fileObj, variableName, io_domain, xPosition, yPosition)
   type(FmsNetcdfFile_t), intent(inout) :: fileObj !< netCDF file object returned by call to open_file
   character(len=*), intent(in) :: variableName !< name of the variable
-  type(MOM_domain_type), intent(in) :: domain !< type that contains the mpp domain
+  type(domain2D), intent(in) :: io_domain !< type that contains the mpp io domain
   integer, intent(in), optional :: xPosition !< domain position of the x-axis
   integer, intent(in), optional :: yPosition !< domain position of the y-axi
   ! local
@@ -3751,7 +3755,7 @@ subroutine MOM_register_variable_axes_subdomain(fileObj, variableName, domain, x
     pos = NORTH_FACE
   endif
   ! Get the lengths of the global indicies   
-  call mpp_get_compute_domain(domain%mpp_domain, xsize=xlen, ysize=ylen, position=pos)
+  call mpp_get_compute_domain(io_domain, xsize=xlen, ysize=ylen, position=pos)
   ! register the axes
   !>\note: This is not a comprehensive check for all possible supported horizontal axes associated with variables
   !! read from netCDF files. Developers should add/remove cases as needed.
