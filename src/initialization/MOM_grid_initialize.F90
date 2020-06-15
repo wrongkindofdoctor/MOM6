@@ -273,7 +273,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   ! Read X from the supergrid. \note: tmpZ is defined on the data domain
   tmpZ(:,:) = 999.
   call MOM_read_data(filename, 'x', tmpZ, SGdom, is_supergrid = .true., &
-                     x_position=EAST_FACE, y_position=NORTH_FACE, leave_file_open=.true.)
+                     x_position=EAST_FACE, leave_file_open=.true.)
 
   if (lon_bug) then
     call pass_var(tmpZ, SGdom, position=CORNER)
@@ -299,7 +299,7 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   ! Read Y from the supergrid
   tmpZ(:,:) = 999.
   call MOM_read_data(filename, 'y', tmpZ, SGdom, is_supergrid = .true., &
-                     x_position=EAST_FACE, y_position=NORTH_FACE, leave_file_open=.true.)
+                     y_position=NORTH_FACE, leave_file_open=.true.)
 
   call pass_var(tmpZ, SGdom, position=CORNER)
   call extrapolate_metric(tmpZ, 2*(G%jsc-G%jsd)+2, missing=999.)
@@ -391,7 +391,8 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   start(2) = 2 ; nread(1) = ni+1 ; nread(2) = 2
   allocate( tmpGlbl(ni+1,2) )
   ! read x into the tmpGlbl buffer
-  call MOM_read_data(fileName, "x", tmpGlbl, define_diagnostic_axes=.true., G=G, leave_file_open=.true.)
+ ! call MOM_read_data(fileName, "x", tmpGlbl, define_diagnostic_axes=.true., G=G, leave_file_open=.true.)
+  call MOM_read_data(fileName, "x", tmpGlbl, start_index=start, edge_lengths=nread, leave_file_open=.true.)
  ! I don't know why the second axis is 1 or 2 here. -RWH
   do i=G%isg,G%ieg
     G%gridLonT(i) = tmpGlbl(2*(i-G%isg)+2,2)
@@ -407,13 +408,14 @@ subroutine set_grid_metrics_from_mosaic(G, param_file, US)
   start(:) = 1 ; nread(:) = 1
   start(1) = int(ni/4)+1 ; nread(2) = nj+1
   ! read y into the tmpGlbl buffer
-  call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, grid_type="t", leave_file_open=.true.)
+  !call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, grid_type="t", leave_file_open=.true.)
+  call MOM_read_data(fileName, "y", tmpGlbl, start_index=start, edge_lengths=nread)
 
   do j=G%jsg,G%jeg
     G%gridLatT(j) = tmpGlbl(1,2*(j-G%jsg)+2)
   enddo
  ! read y into the tmpGlbl buffer
-  call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, grid_type="b")
+  !call MOM_read_data(fileName, "y", tmpGlbl, define_diagnostic_axes=.true., G=G, grid_type="b")
 
   do J=G%jsg-1,G%jeg
     G%gridLatB(J) = tmpGlbl(1,2*(j-G%jsg)+3)

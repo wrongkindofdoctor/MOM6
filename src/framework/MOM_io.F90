@@ -2814,7 +2814,7 @@ subroutine MOM_read_data_1d_noDD(filename, fieldname, data, start_index, edge_le
   if (present(edge_lengths)) then
     nread(1) = edge_lengths(1)
   else
-    call get_dimension_size(fileobj_read, trim(dim_names(1)), nread(1))
+    nread = shape(data)
   endif
   ! read the data
   dim_unlim_size = 0
@@ -2872,7 +2872,6 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
 
   close_the_file = .true.
   if (present(leave_file_open)) close_the_file = .not.(leave_file_open)
-
   ! open the file
   if (.not.(check_if_open(fileobj_read))) then
     file_open_success = fms2_open_file(fileobj_read, filename, "read", is_restart=.false.)
@@ -2893,28 +2892,25 @@ subroutine MOM_read_data_2d_noDD(filename, fieldname, data, start_index, edge_le
       exit
     endif
   enddo
-  if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_noDD: "//trim(fieldname)//&
+  if (.not.(variable_found)) &
+    call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_noDD: "//trim(fieldname)//&
                                             " not found in "//trim(filename))
   ! set the start and nread values that will be passed as the read_data corner and edge_lengths arguments
-  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(fieldname))
-  allocate(dim_names(num_var_dims))
-  dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
-
   start(:) = 1
   if (present(start_index)) start = start_index
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,2
-      call get_dimension_size(fileobj_read, trim(dim_names(i)), nread(i))
-    enddo
+    nread = shape(data)
   endif
-
   ! read the data
   dim_unlim_size=0
   if (present(timelevel)) then
+    num_var_dims = get_variable_num_dimensions(fileobj_read, trim(fieldname))
+    allocate(dim_names(num_var_dims))
+    call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
+    dim_names(:) = ""
     do i=1,num_var_dims
       if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
         call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
@@ -3002,9 +2998,7 @@ subroutine MOM_read_data_3d_noDD(filename, fieldname, data, start_index, edge_le
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,2
-      call get_dimension_size(fileobj_read, trim(dim_names(i)), nread(i))
-    enddo
+    nread = shape(data)
   endif
   ! read the data
   dim_unlim_size=0
@@ -3095,11 +3089,8 @@ subroutine MOM_read_data_4d_noDD(filename, fieldname, data, start_index, edge_le
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    do i=1,4
-      call get_dimension_size(fileobj_read, trim(dim_names(i)), nread(i))
-    enddo
+    nread = shape(data)
   endif
-
   ! read the data
   dim_unlim_size=0
   if (present(timelevel)) then
