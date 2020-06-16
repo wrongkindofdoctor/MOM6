@@ -2367,29 +2367,27 @@ subroutine MOM_read_data_2d_DD(filename, fieldname, data, domain, start_index, e
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
   ! get the IO domain
-  io_domain => mpp_get_io_domain(domain%mpp_domain)
+  !io_domain => mpp_get_io_domain(domain%mpp_domain)
   ! Get the global indicies
-  call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  !call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
   ! Get the compute indicies
-  call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
-  last(1) = iec - isg + 1 ! get array indices for the axis data
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
+  !call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  !last(1) = iec - isg + 1 ! get array indices for the axis data
+  !last(2) = jec - jsg + 1
+  !first(1) = isc - isg + 1
+  !first(2) = jsc - jsg + 1
 
   start(:) = 1
   if (present(start_index)) then
     start = start_index
-  else
-    start(:) = first(:)
+  !else
+  !  start(:) = first(:)
   endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    !do i=1,num_var_dims
-    !  call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    !enddo
+    nread = shape(data)
   endif
   ! read the data
   dim_unlim_size=0
@@ -2503,35 +2501,26 @@ subroutine MOM_read_data_3d_DD(filename, fieldname, data, domain, start_index, e
   ! get the IO domain
   io_domain => mpp_get_io_domain(domain%mpp_domain)
   ! Get the global indicies
-  call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
-  ! Get the compute indicies
-  call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
-  last(1) = iec - isg + 1 ! get array indices for the axis data
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
-
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
-  last(1) = iec - isg + 1 ! get array indices for the axis data
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
+ ! call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+ ! call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  !last(1) = iec - isg + 1 ! get array indices for the axis data
+  !last(2) = jec - jsg + 1
+  !first(1) = isc - isg + 1
+  !first(2) = jsc - jsg + 1
 
   start(:) = 1
   if (present(start_index)) then
     start = start_index
-  else
-    start(1:2) = first(1:2)
+  !else
+  !  start(1:2) = first(1:2)
   endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    nread(1) = last(1) - first(1) + 1
-    nread(2) = last(2) - first(2) + 1
-    call get_dimension_size(fileobj_read_dd, trim(dim_names(3)), nread(3))
-    !nread = shape(data)
+    !nread(1) = last(1) - first(1) + 1
+    !nread(2) = last(2) - first(2) + 
+    nread = shape(data)
   endif
  ! read the data
   dim_unlim_size=0
@@ -2646,38 +2635,27 @@ subroutine MOM_read_data_4d_DD(filename, fieldname, data, domain, start_index, e
   dim_names(:) = ""
   call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
   ! get the IO domain
-  io_domain => mpp_get_io_domain(domain%mpp_domain)
+  !io_domain => mpp_get_io_domain(domain%mpp_domain)
   ! Get the global indicies
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
+  !call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
   ! Get the compute indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
-  last(1) = iec - isg + 1 ! get array indices for the axis data
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
-
-  call mpp_get_global_domain(domain%mpp_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg,    position=pos) ! Get the global indicies
-  call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos) ! Get the compute indicies
-  last(1) = iec - isg + 1 ! get array indices for the axis data
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
+ ! call mpp_get_compute_domain(domain%mpp_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  !last(1) = iec - isg + 1 ! get array indices for the axis data
+  !first(1) = isc - isg + 1
 
   start(:) = 1
   if (present(start_index)) then
     start(:) = start_index(:)
-  else
-    start(1:2) = first(1:2)
+  !else
+    !start(1:2) = first(1:2)
   endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
   else
-    nread(1) = last(1) - first(1) + 1
-    nread(2) = last(2) - first(2) + 1
-    do i=3,num_var_dims
-      call get_dimension_size(fileobj_read_dd, trim(dim_names(i)), nread(i))
-    enddo
+    !nread(1) = last(1) - first(1) + 1
+    !nread(2) = last(2) - first(2) + 1
+    nread = shape(data)
   endif
   ! read the data
   dim_unlim_size=0
@@ -3166,7 +3144,8 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
-  integer :: isc, iec, jsc, jec, isg, ieg, jsg, jeg
+  integer :: isc, iec, jsc, jec, isd, ied, jsd, jed, isg, ieg, jsg, jeg
+  integer :: xsize_c, ysize_c, xsize_d, ysize_d
   type(domain2D), pointer :: io_domain => NULL()
 
   if (.not.(is_supergrid)) call MOM_read_data(filename, fieldname, data, domain, start_index, edge_lengths, &
@@ -3180,94 +3159,94 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   if (present(leave_file_open)) close_the_file = .not.(leave_file_open)
 
   ! open the file
-  if (.not.(check_if_open(fileobj_read))) then
+  if (.not.(check_if_open(fileobj_read_dd))) then
     ! define the io domain for 1-pe jobs because it is required to read domain-decomposed files
     if (mpp_get_domain_npes(domain%mpp_domain) .eq. 1 ) then
       if (.not. associated(mpp_get_io_domain(domain%mpp_domain))) &
         call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
     endif
-    file_open_success = fms2_open_file(fileobj_read, filename, "read", is_restart=.false.)
-    file_var_meta_noDD%nvars = get_num_variables(fileobj_read)
-    if (file_var_meta_noDD%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
+    file_open_success = fms2_open_file(fileobj_read_dd, filename, "read", domain%mpp_domain, is_restart=.false.)
+    file_var_meta_DD%nvars = get_num_variables(fileobj_read_dd)
+    if (file_var_meta_DD%nvars .lt. 1) call MOM_error(FATAL, "nvars is less than 1 for file "// &
                                                            trim(filename))
-    if (.not.(allocated(file_var_meta_noDD%var_names))) &
-      allocate(file_var_meta_noDD%var_names(file_var_meta_noDD%nvars))
-    call get_variable_names(fileobj_read, file_var_meta_noDD%var_names)
+    if (.not.(allocated(file_var_meta_DD%var_names))) &
+      allocate(file_var_meta_DD%var_names(file_var_meta_DD%nvars))
+    call get_variable_names(fileobj_read_dd, file_var_meta_DD%var_names)
   endif
   ! search for the variable in the file
-  variable_to_read = ""
+  variable_to_read = trim(fieldname)
   variable_found = .false.
   do i=1,file_var_meta_noDD%nvars
-    if (lowercase(trim(file_var_meta_noDD%var_names(i))) .eq. lowercase(trim(fieldname))) then
+    if (lowercase(trim(file_var_meta_DD%var_names(i))) .eq. lowercase(trim(fieldname))) then
       variable_found = .true.
-      variable_to_read = trim(file_var_meta_noDD%var_names(i))
+      variable_to_read = trim(file_var_meta_DD%var_names(i))
       exit
     endif
   enddo
-  if (.not.(variable_found)) call MOM_error(FATAL, "MOM_io:MOM_read_data_2d_supergrid: "//&
+  if (.not.(variable_found)) call MOM_error(WARNING, "MOM_io:MOM_read_data_2d_supergrid: "//&
       trim(fieldname)//" not found in "//trim(filename))
 
   pos = CENTER
-  if (present(x_position)) then
-    if (present(y_position)) then
+  if (xpos .eq. NORTH_FACE) then
+    if (ypos .eq. EAST_FACE) then
       pos = CORNER
     else
       pos = xpos
     endif
-  elseif (present(y_position)) then
+  elseif (ypos .eq. EAST_FACE) then
     pos = ypos
   endif
   ! set the start and nread values that will be passed as the read_data corner and edge_lengths argument
-  num_var_dims = get_variable_num_dimensions(fileobj_read, trim(variable_to_read))
+  num_var_dims = get_variable_num_dimensions(fileobj_read_dd, trim(variable_to_read))
   allocate(dim_names(num_var_dims))
   dim_names(:) = ""
-  call get_variable_dimension_names(fileobj_read, trim(variable_to_read), dim_names)
+  call get_variable_dimension_names(fileobj_read_dd, trim(variable_to_read), dim_names)
   ! get the IO domain
   io_domain => mpp_get_io_domain(domain%mpp_domain)
   ! register the variable axes
-  call MOM_register_variable_axes(fileobj_read, trim(variable_to_read), io_domain, xPosition=xpos, yPosition=ypos) 
-  ! Get the global indicies
-  call mpp_get_global_domain(io_domain, xbegin=isg, xend=ieg, ybegin=jsg, yend=jeg, position=pos)
-  ! Get the compute indicies
-  call mpp_get_compute_domain(io_domain, xbegin=isc, xend=iec, ybegin=jsc, yend=jec, position=pos)
+  !call MOM_register_variable_axes(fileobj_read, trim(variable_to_read), io_domain, xPosition=xpos, yPosition=ypos) 
+  
+ ! call mpp_get_global_domain( io_domain,isg,ieg,jsg,jeg,xsize=xsize_g,ysize=ysize_g, position=pos)
+  call mpp_get_compute_domain(io_domain,isc,iec,jsc,jec,xsize=xsize_c,ysize=ysize_c, position=pos)
+  call mpp_get_data_domain(io_domain,isd,ied,jsd,jed,xsize=xsize_d,ysize=ysize_d, position=pos)
   ! get array indices for the axis data
-  last(1) = iec - isg + 1
-  last(2) = jec - jsg + 1
-  first(1) = isc - isg + 1
-  first(2) = jsc - jsg + 1
+  last(1) = iec - isd + 1
+  last(2) = jec - jsd + 1
+  first(1) = isc - isd + 1
+  first(2) = jsc - jsd + 1
 
   start(:) = 1
   if (present(start_index)) then
     start = start_index
-  else
+  elseif((size(data,1)==xsize_d) .and. (size(data,2)==ysize_d)) then !on_data_domain
     start(:) = first(:)
   endif
 
   if (present(edge_lengths)) then
     nread = edge_lengths
-  else
+  elseif((size(data,1)==xsize_d) .and. (size(data,2)==ysize_d)) then !on_data_domain
     nread(1) = last(1) - first(1) + 1
     nread(2) = last(2) - first(2) + 1
-    !do i=1,num_var_dims
-    !  call get_dimension_size(fileobj_read, trim(dim_names(i)), nread(i))
-    !enddo
+  else
+    last = shape(data)
+    nread = shape(data)
   endif
   ! read the data
   dim_unlim_size=0
   if (present(timelevel)) then
     do i=1,num_var_dims
-      if (is_dimension_unlimited(fileobj_read, dim_names(i))) then
-        call get_dimension_size(fileobj_read, dim_names(i), dim_unlim_size)
+      if (is_dimension_unlimited(fileobj_read_dd, dim_names(i))) then
+        call get_dimension_size(fileobj_read_dd, dim_names(i), dim_unlim_size)
       endif
     enddo
     if (dim_unlim_size .gt. 0) then
-      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
                      unlim_dim_level=timelevel)
     else
-      call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
     endif
   else
-    call read_data(fileobj_read, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+    call read_data(fileobj_read_dd, trim(variable_to_read), data(start(1):last(1), start(2): last(2)))
   endif
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
@@ -3275,8 +3254,8 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   endif ; endif
   ! close the file
   if (close_the_file) then
-    if (check_if_open(fileobj_read)) call fms2_close_file(fileobj_read)
-    if (allocated(file_var_meta_noDD%var_names)) deallocate(file_var_meta_noDD%var_names)
+    if (check_if_open(fileobj_read_dd)) call fms2_close_file(fileobj_read_dd)
+    if (allocated(file_var_meta_DD%var_names)) deallocate(file_var_meta_DD%var_names)
     file_var_meta_noDD%nvars = 0
   endif
   if (allocated(dim_names)) deallocate(dim_names)
@@ -3807,7 +3786,7 @@ subroutine MOM_register_variable_axes_subdomain(fileObj, variableName, io_domain
               "and add it to the accepted cases if necessary.")
           call register_axis(fileObj, trim(dim_names(i)), dimSizes(i))
       end select
-    endif
+   ! endif
   enddo
 
   if (allocated(dimSizes)) deallocate(dimSizes)
@@ -3869,6 +3848,8 @@ subroutine MOM_register_variable_axes_full(fileObj, variableName, xPosition, yPo
           call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
         case("xh")
           call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
+        case("i")
+          call register_axis(fileObj, trim(dim_names(i)),"x", domain_position=xPos)
         case ("grid_y_t")
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
         case ("ny")
@@ -3884,6 +3865,8 @@ subroutine MOM_register_variable_axes_full(fileObj, variableName, xPosition, yPo
         case("latq")
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=yPos)
         case("yh")
+          call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=xPos)
+         case("j")
           call register_axis(fileObj, trim(dim_names(i)),"y", domain_position=xPos)
         case default ! assumes that the axis is not domain-decomposed
           if (.not. is_dimension_unlimited(fileObj, trim(dim_names(i)))) &
