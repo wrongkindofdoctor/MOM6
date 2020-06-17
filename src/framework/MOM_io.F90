@@ -3139,13 +3139,14 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   logical :: file_open_success !.true. if call to open_file is successful
   logical :: variable_found ! .true. if lowercase(fieldname) matches one of the lowercase file variable names
   logical :: close_the_file ! indicates whether to close the file after write_data is called; default is .true.
-  integer :: i, dim_unlim_size, num_var_dims, first(2), last(2)
+  integer :: i, dim_unlim_size, npes, num_var_dims, first(2), last(2)
   integer :: start(2), nread(2) ! indices for first data value and number of values to read
   character(len=40), allocatable :: dim_names(:) ! variable dimension names
   character(len=96) :: variable_to_read ! variable to read from the netcdf file
   integer :: xpos, ypos, pos ! x and y domain positions
   integer :: isc, iec, jsc, jec, isd, ied, jsd, jed, isg, ieg, jsg, jeg
   integer :: xsize_c, ysize_c, xsize_d, ysize_d
+  real, allocatable :: array(:,:) ! dummy array to pass to read data
   type(domain2D), pointer :: io_domain => NULL()
 
   if (.not.(is_supergrid)) call MOM_read_data(filename, fieldname, data, domain, start_index, edge_lengths, &
@@ -3157,11 +3158,11 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
 
   close_the_file = .true.
   if (present(leave_file_open)) close_the_file = .not.(leave_file_open)
-
+  npes=-1; npes = mpp_get_domain_npes(domain%mpp_domain)
   ! open the file
   if (.not.(check_if_open(fileobj_read_dd))) then
     ! define the io domain for 1-pe jobs because it is required to read domain-decomposed files
-    if (mpp_get_domain_npes(domain%mpp_domain) .eq. 1 ) then
+    if (npes .eq. 1 ) then
       if (.not. associated(mpp_get_io_domain(domain%mpp_domain))) &
         call mpp_define_io_domain(domain%mpp_domain, (/1,1/))
     endif
@@ -3176,8 +3177,8 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   ! search for the variable in the file
   variable_to_read = trim(fieldname)
   variable_found = .false.
-  do i=1,file_var_meta_noDD%nvars
-    if (lowercase(trim(file_var_meta_DD%var_names(i))) .eq. lowercase(trim(fieldname))) then
+  do i=1,file_var_meta_DD%nvars
+    if (trim(lowercase(file_var_meta_DD%var_names(i))) .eq. trim(lowercase(fieldname))) then
       variable_found = .true.
       variable_to_read = trim(file_var_meta_DD%var_names(i))
       exit
@@ -3205,32 +3206,37 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   io_domain => mpp_get_io_domain(domain%mpp_domain)
   ! register the variable axes
   !call MOM_register_variable_axes(fileobj_read, trim(variable_to_read), io_domain, xPosition=xpos, yPosition=ypos) 
-  
- ! call mpp_get_global_domain( io_domain,isg,ieg,jsg,jeg,xsize=xsize_g,ysize=ysize_g, position=pos)
-  call mpp_get_compute_domain(io_domain,isc,iec,jsc,jec,xsize=xsize_c,ysize=ysize_c, position=pos)
-  call mpp_get_data_domain(io_domain,isd,ied,jsd,jed,xsize=xsize_d,ysize=ysize_d, position=pos)
-  ! get array indices for the axis data
-  last(1) = iec - isd + 1
-  last(2) = jec - jsd + 1
-  first(1) = isc - isd + 1
-  first(2) = jsc - jsd + 1
-
+  call mpp_get_data_domain(domain%mpp_domain,isd,ied,jsd,jed,xsize=xsize_d,ysize=ysize_d,position=pos)
+  call mpp_get_global_domain(domain%mpp_domain,isg,ieg,jsg,jeg,position=pos)
+  call mpp_get_compute_domain(domain%mpp_domain,isc,iec,jsc,jec,position=pos)
+  ! get the start indices
   start(:) = 1
   if (present(start_index)) then
     start = start_index
-  elseif((size(data,1)==xsize_d) .and. (size(data,2)==ysize_d)) then !on_data_domain
-    start(:) = first(:)
+  else!if((size(data,1) .eq. xsize_d) .and. (size(data,2) .eq. ysize_d)) then ! on_data_domain
+    if (npes .gt. 1) then
+      start(1) = isc - isg + 1
+      start(2) = jsc - jsg + 1
+    else
+      if (iec-isc+1 .ne. ieg-isg+1) start(1) = isc - isg + 1
+      if (jec-jsc+1 .ne. jeg-jsg+1) start(2) = jsc - jsg + 1
+    endif
   endif
-
+  ! get the values for the edge_lengths (nread)
+  nread = shape(data)
   if (present(edge_lengths)) then
     nread = edge_lengths
-  elseif((size(data,1)==xsize_d) .and. (size(data,2)==ysize_d)) then !on_data_domain
-    nread(1) = last(1) - first(1) + 1
-    nread(2) = last(2) - first(2) + 1
-  else
-    last = shape(data)
-    nread = shape(data)
+  else!if((size(data,1) .eq. xsize_d) .and. (size(data,2) .eq. ysize_d)) then ! on_data_domain
+    if (npes .gt. 1) then
+      nread(1) = iec - isc + 1
+      nread(2) = jec - jsc + 1
+    else
+      if (iec-isc+1 .ne. ieg-isg+1) nread(1) = iec - isc + 1
+      if (jec-jsc+1 .ne. jeg-jsg+1) nread(2) = jec - jsc + 1
+    endif  
   endif
+  ! allocate the dummy array
+  if (.not. allocated(array)) allocate(array(size(data,1),size(data,2)))
   ! read the data
   dim_unlim_size=0
   if (present(timelevel)) then
@@ -3240,13 +3246,18 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
       endif
     enddo
     if (dim_unlim_size .gt. 0) then
-      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread, &
+      call read_data(fileobj_read_dd, trim(variable_to_read), array, corner=start, edge_lengths=nread, &
                      unlim_dim_level=timelevel)
     else
-      call read_data(fileobj_read_dd, trim(variable_to_read), data, corner=start, edge_lengths=nread)
+      call read_data(fileobj_read_dd, trim(variable_to_read), array, corner=start, edge_lengths=nread)
     endif
   else
-    call read_data(fileobj_read_dd, trim(variable_to_read), data(start(1):last(1), start(2): last(2)))
+    call read_data(fileobj_read_dd, trim(variable_to_read), array, corner=start, edge_lengths=nread)
+  endif
+  if((size(array,1) .eq. xsize_d) .and. (size(array,2) .eq. ysize_d)) then ! on_data_domain
+    data(isc-isd+1:iec-isd+1,jsc-jsd+1:jec-jsd+1) = array(isc-isd+1:iec-isd+1,jsc-jsd+1:jec-jsd+1)
+  else
+    data = array
   endif
   ! scale the data
   if (present(scale)) then ; if (scale /= 1.0) then
@@ -3260,6 +3271,7 @@ subroutine MOM_read_data_2d_supergrid(filename, fieldname, data, domain, is_supe
   endif
   if (allocated(dim_names)) deallocate(dim_names)
   if (associated(io_domain)) nullify(io_domain)
+  if (allocated(array)) deallocate(array)
 end subroutine MOM_read_data_2d_supergrid
 
 
