@@ -13,7 +13,7 @@ use MOM_error_handler,    only : MOM_error, FATAL, WARNING, is_root_pe, assert
 use MOM_file_parser,      only : get_param, log_version, param_file_type
 use MOM_grid,             only : ocean_grid_type
 use MOM_io,               only : slasher, vardesc, query_vardesc, mom_read_data
-use MOM_io,               only : EAST_FACE, NORTH_FACE !, get_filename_appendix !>\note call not in new IO; devs need
+use MOM_io,               only : EAST_FACE, NORTH_FACE, get_filename_appendix !>\note call not in new IO; devs need
                                                        !! to find where call occurs and move function to MOM_io
 use MOM_safe_alloc,       only : safe_alloc_ptr, safe_alloc_alloc
 use MOM_string_functions, only : lowercase
@@ -34,7 +34,7 @@ use MOM_diag_remap,       only : horizontally_average_diag_field
 use diag_axis_mod, only : get_diag_axis_name
 use diag_data_mod, only : null_axis_id
 use diag_manager_mod, only : diag_manager_init, diag_manager_end
-use diag_manager_mod, only : send_data, diag_axis_init, diag_field_add_attribute
+use diag_manager_mod, only : send_data, diag_axis_init, EAST, NORTH, diag_field_add_attribute
 ! The following module is needed for PGI since the following line does not compile with PGI 6.5.0
 ! was: use diag_manager_mod, only : register_diag_field_fms=>register_diag_field
 use MOM_diag_manager_wrapper, only : register_diag_field_fms
@@ -366,14 +366,14 @@ subroutine set_axes_info(G, GV, US, param_file, diag_cs, set_vertical)
   ! Horizontal axes for the native grids
   if (G%symmetric) then
     id_xq = diag_axis_init('xq', G%gridLonB(G%isgB:G%iegB), G%x_axis_units, 'x', &
-              'q point nominal longitude', Domain2=G%Domain%mpp_domain, domain_position=EAST_FACE)
+              'q point nominal longitude', Domain2=G%Domain%mpp_domain, domain_position=EAST)
     id_yq = diag_axis_init('yq', G%gridLatB(G%jsgB:G%jegB), G%y_axis_units, 'y', &
-              'q point nominal latitude', Domain2=G%Domain%mpp_domain, domain_position=NORTH_FACE)
+              'q point nominal latitude', Domain2=G%Domain%mpp_domain, domain_position=NORTH)
   else
     id_xq = diag_axis_init('xq', G%gridLonB(G%isg:G%ieg), G%x_axis_units, 'x', &
-              'q point nominal longitude', Domain2=G%Domain%mpp_domain, domain_position=EAST_FACE)
+              'q point nominal longitude', Domain2=G%Domain%mpp_domain, domain_position=EAST)
     id_yq = diag_axis_init('yq', G%gridLatB(G%jsg:G%jeg), G%y_axis_units, 'y', &
-              'q point nominal latitude', Domain2=G%Domain%mpp_domain, domain_position=NORTH_FACE)
+              'q point nominal latitude', Domain2=G%Domain%mpp_domain, domain_position=NORTH)
   endif
   id_xh = diag_axis_init('xh', G%gridLonT(G%isg:G%ieg), G%x_axis_units, 'x', &
               'h point nominal longitude', Domain2=G%Domain%mpp_domain)
